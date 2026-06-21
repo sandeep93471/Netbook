@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Netbook — connect with friends and share your stories" />
+    <meta property="og:title" content="Netbook - Social Media Platform" />
+    <meta property="og:description" content="Connect with friends and share your stories" />
+    <meta property="og:image" content="https://netbook-e9243.web.app/favicon.svg" />
+    <meta property="og:url" content="https://netbook-e9243.web.app" />
+    <meta name="twitter:card" content="summary" />
+    <title>Netbook</title>
+    <script>
+      // Flash-free dark mode — apply .dark before React paints.
+      // Reads the redux-persist store (persist:root → ui.mode).
+      try {
+        const persisted = JSON.parse(localStorage.getItem('persist:root') || '{}')
+        const mode = persisted.ui ? JSON.parse(persisted.ui).mode : null
+        if (mode === 'dark' || (!mode && matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark')
+          document.documentElement.style.background = '#18191A'
+        }
+      } catch (e) { /* default to light */ }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
