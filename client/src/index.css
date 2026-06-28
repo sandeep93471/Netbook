@@ -1,0 +1,238 @@
+@import "tailwindcss";
+
+/* dark: variant keys off the .dark class on <html> (toggled by ThemedApp) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Align Tailwind breakpoints with MUI (sm 600 / md 900 / lg 1200 / xl 1536) —
+   one breakpoint system, no 768–900px drift */
+@theme {
+  --breakpoint-sm: 600px;
+  --breakpoint-md: 900px;
+  --breakpoint-lg: 1200px;
+  --breakpoint-xl: 1536px;
+  --font-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+}
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* sticky 56px navbar — focused/anchored content never hides under it (WCAG 2.4.11) */
+    scroll-padding-top: 72px;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #F0F2F5;
+    color: #050505;
+    line-height: 1.45;
+  }
+
+  html.dark body {
+    background-color: #18191A;
+    color: #E4E6EB;
+  }
+
+  /* Visible focus ring everywhere — never remove without replacement */
+  *:focus-visible {
+    outline: 2px solid #0A5CE0;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  html.dark *:focus-visible {
+    outline-color: #4599FF;
+  }
+
+  ::selection {
+    background-color: #0A5CE0;
+    color: #ffffff;
+  }
+
+  a {
+    text-decoration: none;
+    color: inherit;
+    transition: color 0.2s ease;
+  }
+
+  button {
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus {
+    outline: none;
+  }
+
+  /* Reduced motion — honor OS setting globally */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Netbook brand gradient — blue→violet, NOT the IG orange ring */
+  .gradient-primary {
+    background: linear-gradient(135deg, #0A5CE0 0%, #0847B8 100%);
+  }
+
+  .gradient-accent {
+    background: linear-gradient(135deg, #0A5CE0 0%, #7C3AED 100%);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, #0A5CE0, #7C3AED);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .shadow-card {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .shadow-button {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  }
+
+  /* Story rings — unseen: brand gradient; seen: grey; close friends: green */
+  .story-ring {
+    padding: 3px;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, #0A5CE0, #7C3AED);
+  }
+  .story-ring-seen {
+    padding: 2px;
+    border-radius: 9999px;
+    background: #767A80;
+  }
+  html.dark .story-ring-seen {
+    background: #8A8D91;
+  }
+  .story-ring-close {
+    padding: 3px;
+    border-radius: 9999px;
+    background: #31A24C;
+  }
+
+  /* Unread notification tint — works in both modes */
+  .unread-tint {
+    background-color: rgba(10, 92, 224, .06);
+  }
+  html.dark .unread-tint {
+    background-color: rgba(69, 153, 255, .12);
+  }
+
+  /* Skip link — visually hidden until focused (WCAG 2.4.1) */
+  .skip-link {
+    position: absolute;
+    left: 8px;
+    top: -48px;
+    z-index: 9999;
+    padding: 10px 16px;
+    background: #0A5CE0;
+    color: #fff;
+    border-radius: 8px;
+    font-weight: 600;
+    transition: top 0.15s ease;
+  }
+  .skip-link:focus {
+    top: 8px;
+  }
+}
+
+@layer utilities {
+  .transition-smooth {
+    transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Heart burst for double-tap like */
+@keyframes heartBurst {
+  0% { transform: scale(0); opacity: 0; }
+  30% { transform: scale(1.2); opacity: 1; }
+  60% { transform: scale(1); }
+  100% { transform: scale(1); opacity: 0; }
+}
+.animate-heart-burst {
+  animation: heartBurst 0.7s ease-out forwards;
+}
+
+/* MUI notched outline fix — the universal `* { padding: 0 }` reset above strips
+   the padding MUI uses to measure/cut the label gap, so the border line strikes
+   through floating labels ("overlapping text"). Restore both paddings here,
+   unlayered, so they always win over the reset. */
+.MuiOutlinedInput-notchedOutline {
+  padding: 0 8px;
+}
+.MuiOutlinedInput-notchedOutline legend > span {
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+/* Floating labels: the notch fix above (legend padding) cuts a real gap in the
+   border, so no background mask is needed — a solid bg painted an ugly chip
+   that mismatched themed/custom field backgrounds. Keep only spacing. */
+.MuiInputLabel-shrink {
+  padding: 0 4px;
+}
+
+/* Scrollbar — mode-aware */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #4b4d4f;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
