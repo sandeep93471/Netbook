@@ -71,15 +71,18 @@ export const StoryViewer = ({ group, onClose, isOwner, onNextGroup, onPrevGroup 
     <Dialog open fullScreen onClose={onClose} PaperProps={{ sx: { background: '#000' } }}>
       <div className="relative h-full flex items-center justify-center select-none">
 
-        {/* Prev / next arrows — outside the frame (desktop) */}
+        {/* Prev / next arrows — solid circles beside the frame (desktop),
+            inside the frame edges on mobile */}
         <IconButton
           onClick={goPrev}
           aria-label="Previous story"
           sx={{
             position: 'absolute', left: { xs: 8, md: 'calc(50% - 260px)' }, top: '50%',
             transform: 'translateY(-50%)', zIndex: 30,
-            color: '#fff', bgcolor: 'rgba(255,255,255,0.12)',
-            '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' },
+            color: '#fff', bgcolor: 'rgba(40,40,40,0.9)',
+            boxShadow: '0 2px 12px rgba(0,0,0,.5)',
+            width: 44, height: 44,
+            '&:hover': { bgcolor: 'rgba(70,70,70,0.95)' },
           }}
         >
           <ChevronLeftIcon />
@@ -90,8 +93,10 @@ export const StoryViewer = ({ group, onClose, isOwner, onNextGroup, onPrevGroup 
           sx={{
             position: 'absolute', right: { xs: 8, md: 'calc(50% - 260px)' }, top: '50%',
             transform: 'translateY(-50%)', zIndex: 30,
-            color: '#fff', bgcolor: 'rgba(255,255,255,0.12)',
-            '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' },
+            color: '#fff', bgcolor: 'rgba(40,40,40,0.9)',
+            boxShadow: '0 2px 12px rgba(0,0,0,.5)',
+            width: 44, height: 44,
+            '&:hover': { bgcolor: 'rgba(70,70,70,0.95)' },
           }}
         >
           <ChevronRightIcon />

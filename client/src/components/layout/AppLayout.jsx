@@ -79,9 +79,9 @@ const AppLayout = () => {
             </PageTransition>
           </AnimatePresence>
         </main>
-        {/* Right rail — suggestions on large screens; hidden on chat (needs the width) */}
+        {/* Right rail — suggestions on wide screens only (xl+); hidden on chat */}
         {!location.pathname.startsWith('/chat') && (
-          <aside className="w-80 hidden lg:block shrink-0 sticky top-[72px] self-start max-h-[calc(100dvh-88px)] overflow-y-auto">
+          <aside className="w-80 hidden xl:block shrink-0 sticky top-[72px] self-start max-h-[calc(100dvh-88px)] overflow-y-auto">
             <RightRail />
           </aside>
         )}

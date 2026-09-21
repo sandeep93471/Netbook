@@ -13,6 +13,7 @@ import {
   Box,
   Checkbox,
   FormControlLabel,
+  MenuItem,
 } from '@mui/material'
 import {
   Visibility,
@@ -418,13 +419,12 @@ const Register = () => {
                   name="gender"
                   value={formData.gender}
                   onChange={handleChange}
-                  SelectProps={{ native: true }}
                   sx={FIELD_SX}
+                  slotProps={{ inputLabel: { shrink: true } }}
                 >
-                  <option value=""></option>
-                  <option value="female">Female</option>
-                  <option value="male">Male</option>
-                  <option value="other">Other</option>
+                  <MenuItem value="female">Female</MenuItem>
+                  <MenuItem value="male">Male</MenuItem>
+                  <MenuItem value="other">Other</MenuItem>
                 </TextField>
               </Box>
             </Box>

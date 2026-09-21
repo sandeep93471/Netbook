@@ -50,13 +50,13 @@ export const loginWithGoogleThunk = createAsyncThunk(
 
 export const logoutUser = createAsyncThunk(
   'auth/logout',
-  async (_, { rejectWithValue }) => {
+  async () => {
+    // Always clear local state — a failed request (e.g. expired token) must
+    // not leave the user stuck "logged in" until refresh.
     try {
       await logout()
-      closeSocket()
-    } catch (err) {
-      return rejectWithValue(apiError(err))
-    }
+    } catch { /* cookie may already be gone — fine */ }
+    closeSocket()
   }
 )
 

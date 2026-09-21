@@ -131,9 +131,18 @@ export const updatePost = async (req, res) => {
   if (post.user.toString() !== req.user._id.toString()) {
     return res.status(403).json({ message: 'Not your post' })
   }
-  const parsed = await parsePostText(req.body.text)
-  post.text = req.body.text
-  Object.assign(post, parsed)
+  if (req.body.text !== undefined) {
+    const parsed = await parsePostText(req.body.text)
+    post.text = req.body.text
+    Object.assign(post, parsed)
+  }
+  // Audience can be changed after posting — FB-style flexibility
+  if (req.body.visibility !== undefined) {
+    if (!['public', 'followers', 'closefriends', 'onlyme'].includes(req.body.visibility)) {
+      return res.status(400).json({ message: 'Invalid audience' })
+    }
+    post.visibility = req.body.visibility
+  }
   await post.save()
   res.json({ post: shapePost(post) })
 }

@@ -17,6 +17,9 @@ import BookmarkIcon from '@mui/icons-material/Bookmark'
 import FlagIcon from '@mui/icons-material/Flag'
 import PeopleIcon from '@mui/icons-material/People'
 import LockIcon from '@mui/icons-material/Lock'
+import PublicIcon from '@mui/icons-material/Public'
+import StarIcon from '@mui/icons-material/Star'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import { Link } from 'react-router-dom'
 import { timeAgo } from '../../utils/timeAgo'
 import {
@@ -73,6 +76,14 @@ const REACTIONS = [
 ]
 const REACTION_MAP = Object.fromEntries(REACTIONS.map((r) => [r.type, r]))
 
+// Post audiences — same set as the composer
+const POST_AUDIENCES = [
+  { value: 'public', label: 'Public', icon: PublicIcon },
+  { value: 'followers', label: 'Friends', icon: PeopleIcon },
+  { value: 'closefriends', label: 'Close friends', icon: StarIcon },
+  { value: 'onlyme', label: 'Only me', icon: LockIcon },
+]
+
 // Embedded card for shared posts
 const SharedPostEmbed = ({ shared }) => (
   <Box
@@ -115,6 +126,7 @@ const PostCard = memo(({ post, autoOpenComments = false, index }) => {
   const [shareCaption, setShareCaption] = useState('')
   const [reactionAnchor, setReactionAnchor] = useState(null)
   const [reactsOpen, setReactsOpen] = useState(false)
+  const [audAnchor, setAudAnchor] = useState(null)
   const hoverTimer = useRef(null)
   const { user } = useSelector((state) => state.auth)
   const myProfile = useSelector((state) => (user ? selectUserById(state, user.uid) : null))
@@ -226,7 +238,9 @@ const PostCard = memo(({ post, autoOpenComments = false, index }) => {
         subheader={
           <span className="flex items-center gap-1">
             {timeText}
+            {post.visibility === 'public' && <PublicIcon sx={{ fontSize: 13 }} />}
             {post.visibility === 'followers' && <PeopleIcon sx={{ fontSize: 13 }} />}
+            {post.visibility === 'closefriends' && <StarIcon sx={{ fontSize: 13, color: '#1E7A35' }} />}
             {post.visibility === 'onlyme' && <LockIcon sx={{ fontSize: 13 }} />}
           </span>
         }
@@ -244,6 +258,48 @@ const PostCard = memo(({ post, autoOpenComments = false, index }) => {
             <ListItemText>Edit post</ListItemText>
           </MenuItem>
         )}
+        {/* Owner can change audience anytime — FB-style flexibility */}
+        {isOwner && (
+          <MenuItem onClick={(e) => setAudAnchor(e.currentTarget)}>
+            <ListItemIcon>
+              {post.visibility === 'closefriends' ? <StarIcon fontSize="small" />
+                : post.visibility === 'onlyme' ? <LockIcon fontSize="small" />
+                : post.visibility === 'followers' ? <PeopleIcon fontSize="small" />
+                : <PublicIcon fontSize="small" />}
+            </ListItemIcon>
+            <ListItemText>
+              Who can see this?{' '}
+              <Typography component="span" variant="caption" color="text.secondary">
+                {POST_AUDIENCES.find((a) => a.value === post.visibility)?.label || 'Public'}
+              </Typography>
+            </ListItemText>
+            <ChevronRightIcon fontSize="small" />
+          </MenuItem>
+        )}
+        {/* Audience submenu */}
+        <Menu
+          anchorEl={audAnchor} open={!!audAnchor}
+          onClose={() => setAudAnchor(null)}
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        >
+          {POST_AUDIENCES.map((a) => (
+            <MenuItem
+              key={a.value}
+              selected={post.visibility === a.value}
+              onClick={() => {
+                setAudAnchor(null)
+                setMenuAnchor(null)
+                if (post.visibility !== a.value) {
+                  dispatch(updatePost({ postId: post.id, visibility: a.value }))
+                  showSuccess(`Audience set to ${a.label}`)
+                }
+              }}
+            >
+              <ListItemIcon><a.icon fontSize="small" /></ListItemIcon>
+              <ListItemText>{a.label}</ListItemText>
+            </MenuItem>
+          ))}
+        </Menu>
         {isOwner && (
           <MenuItem onClick={() => setConfirmDelete(true)}>
             <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>

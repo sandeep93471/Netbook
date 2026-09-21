@@ -35,6 +35,9 @@ export const getStories = async (req, res) => {
       viewCount: s.viewedBy.length,
     })
   })
+  // Stories within a group play oldest→newest — posting order (queue, not stack)
+  Object.values(groups).forEach((g) => g.stories.reverse())
+
   // Unseen groups sort first (IG behavior)
   const list = Object.values(groups)
   list.sort((a, b) => (a.allSeen ? 1 : 0) - (b.allSeen ? 1 : 0))

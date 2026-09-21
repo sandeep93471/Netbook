@@ -74,12 +74,16 @@ export const toggleLike = createAsyncThunk(
   }
 )
 
-// Edit own post — server re-parses hashtags/mentions/searchTerms
+// Edit own post — server re-parses hashtags/mentions/searchTerms;
+// can also change the audience (public/friends/closefriends/onlyme)
 export const updatePost = createAsyncThunk(
   'posts/update',
-  async ({ postId, text }, { rejectWithValue }) => {
+  async ({ postId, text, visibility }, { rejectWithValue }) => {
     try {
-      const { data } = await api.patch(`/posts/${postId}`, { text })
+      const body = {}
+      if (text !== undefined) body.text = text
+      if (visibility !== undefined) body.visibility = visibility
+      const { data } = await api.patch(`/posts/${postId}`, body)
       return { id: postId, changes: data.post }
     } catch (err) {
       return rejectWithValue(apiError(err))

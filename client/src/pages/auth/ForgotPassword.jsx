@@ -22,13 +22,15 @@ const ForgotPassword = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  const [devCode, setDevCode] = useState('')
 
   const sendCode = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      await resetPassword(email)
+      const { data } = await resetPassword(email)
+      if (data.devCode) setDevCode(data.devCode)
       setStep(2)
     } catch (err) {
       setError(apiError(err))
@@ -80,6 +82,11 @@ const ForgotPassword = () => {
         {error && (
           <Alert severity="error" className="mb-5" onClose={() => setError('')} sx={{ borderRadius: 2 }}>
             {error}
+          </Alert>
+        )}
+        {devCode && (
+          <Alert severity="info" className="mb-5" sx={{ borderRadius: 2 }}>
+            Dev mode — no SMTP configured. Your code: <strong style={{ letterSpacing: 4, fontSize: '1.1rem' }}>{devCode}</strong>
           </Alert>
         )}
 

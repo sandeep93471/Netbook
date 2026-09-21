@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { TextField, InputAdornment, Avatar, Typography, Paper, CircularProgress, Tabs, Tab, IconButton, Skeleton } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import CloseIcon from '@mui/icons-material/Close'
+import Chip from '@mui/material/Chip'
 import FavoriteIcon from '@mui/icons-material/Favorite'
 import ChatBubbleIcon from '@mui/icons-material/ChatBubble'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
@@ -56,6 +57,7 @@ const Explore = () => {
   const [tab, setTab] = useState(0) // 0 = top (grid), 1 = people, 2 = posts
   const [loading, setLoading] = useState(false)
   const [gridPosts, setGridPosts] = useState(null)
+  const [mediaFilter, setMediaFilter] = useState('all') // all | photos | videos
   const debouncedTerm = useDebounce(searchTerm, 400)
   const dispatch = useDispatch()
   const [searchParams] = useSearchParams()
@@ -103,6 +105,10 @@ const Explore = () => {
   }, [debouncedTerm, tab, dispatch])
 
   const searching = Boolean(debouncedTerm.trim())
+  const filteredGrid = (gridPosts || []).filter((p) =>
+    mediaFilter === 'photos' ? !!p.imageURL
+    : mediaFilter === 'videos' ? !!p.videoURL
+    : true)
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -170,9 +176,9 @@ const Explore = () => {
       {/* Default / Top tab — IG-style media grid */}
       {!searching && (
         gridPosts === null ? (
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-3 gap-1">
             {Array.from({ length: 9 }).map((_, i) => (
-              <Skeleton key={i} variant="rounded" className="aspect-square" sx={{ borderRadius: 2 }} />
+              <Skeleton key={i} variant="rounded" className="aspect-square" sx={{ borderRadius: 1 }} />
             ))}
           </div>
         ) : gridPosts.length === 0 ? (
@@ -182,9 +188,28 @@ const Explore = () => {
             description="Posts with photos and videos will show up here"
           />
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {gridPosts.map((post) => <MediaTile key={post.id} post={post} />)}
-          </div>
+          <>
+            {/* Media filter chips — All / Photos / Videos */}
+            <div className="flex gap-2 mb-3">
+              {[['all', 'All'], ['photos', 'Photos'], ['videos', 'Videos']].map(([v, l]) => (
+                <Chip
+                  key={v} label={l}
+                  onClick={() => setMediaFilter(v)}
+                  variant={mediaFilter === v ? 'filled' : 'outlined'}
+                  color={mediaFilter === v ? 'primary' : 'default'}
+                  size="small"
+                />
+              ))}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+              {filteredGrid.map((post) => <MediaTile key={post.id} post={post} />)}
+            </div>
+            {filteredGrid.length === 0 && (
+              <Typography variant="body2" color="text.secondary" className="text-center py-8">
+                No {mediaFilter} yet
+              </Typography>
+            )}
+          </>
         )
       )}
 

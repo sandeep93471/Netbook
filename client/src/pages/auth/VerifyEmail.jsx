@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { TextField, Button, Typography, Alert, CircularProgress, InputAdornment, Box } from '@mui/material'
@@ -16,6 +16,8 @@ const VerifyEmail = () => {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
+  const [devCode, setDevCode] = useState('')
+  const autoSent = useRef(false)
 
   const resend = async () => {
     setSending(true)
@@ -23,7 +25,8 @@ const VerifyEmail = () => {
     try {
       const { data } = await sendVerifyCode()
       setSent(true)
-      if (!data.sent) setError('Email not configured on the server — check server logs for the code')
+      if (data.devCode) setDevCode(data.devCode)
+      else if (!data.sent) setError('Email not configured on the server')
     } catch (err) {
       setError(apiError(err))
     } finally {
@@ -31,13 +34,21 @@ const VerifyEmail = () => {
     }
   }
 
+  // Send a fresh code when the page opens (register's code may have expired)
+  useEffect(() => {
+    if (!autoSent.current) {
+      autoSent.current = true
+      resend()
+    }
+  }, [])
+
   const submit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
       await verifyEmail(code.trim())
-      dispatch(setUser({ ...user, emailVerified: true }))
+      dispatch(setUser({ ...user, verified: true }))
       navigate('/')
     } catch (err) {
       setError(apiError(err))
@@ -63,21 +74,26 @@ const VerifyEmail = () => {
           Netbook
         </Typography>
 
-        <Typography variant="h4" className="font-bold text-[#0f172a] dark:text-[#f1f5f9] mb-1">
+        <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 1 }}>
           Verify your email
         </Typography>
-        <Typography variant="body2" className="text-[#64748b] mb-6">
-          We emailed a 6-digit code to {user?.email}
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          We emailed a 6-digit code to <strong>{user?.email}</strong>
         </Typography>
 
-        {error && <Alert severity="error" className="mb-5" onClose={() => setError('')} sx={{ borderRadius: 2 }}>{error}</Alert>}
-        {sent && <Alert severity="success" className="mb-5" sx={{ borderRadius: 2 }}>Code sent — check your inbox</Alert>}
+        {error && <Alert severity="error" onClose={() => setError('')} sx={{ borderRadius: 2, mb: 2 }}>{error}</Alert>}
+        {devCode && (
+          <Alert severity="info" sx={{ borderRadius: 2, mb: 2 }}>
+            Dev mode — no SMTP configured. Your code: <strong style={{ letterSpacing: 4, fontSize: '1.1rem' }}>{devCode}</strong>
+          </Alert>
+        )}
+        {sent && !devCode && <Alert severity="success" sx={{ borderRadius: 2, mb: 2 }}>Code sent — check your inbox</Alert>}
 
-        <form onSubmit={submit} className="space-y-4">
+        <Box component="form" onSubmit={submit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <TextField
-            fullWidth label="6-digit code" value={code}
+            fullWidth value={code}
             onChange={(e) => setCode(e.target.value)}
-            inputProps={{ maxLength: 6, inputMode: 'numeric' }}
+            placeholder="6-digit code"
             required
             slotProps={{
               input: {
@@ -86,6 +102,11 @@ const VerifyEmail = () => {
                     <PinOutlined sx={{ color: '#94a3b8', fontSize: 20 }} />
                   </InputAdornment>
                 ),
+              },
+              htmlInput: {
+                maxLength: 6,
+                inputMode: 'numeric',
+                style: { letterSpacing: '8px', fontSize: '1.1rem', fontWeight: 600 },
               },
             }}
           />
@@ -98,7 +119,7 @@ const VerifyEmail = () => {
           <Button fullWidth variant="text" onClick={resend} disabled={sending}>
             {sending ? 'Sending…' : "Didn't get it? Resend code"}
           </Button>
-        </form>
+        </Box>
       </Box>
     </Box>
   )

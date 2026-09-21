@@ -41,10 +41,12 @@ export const register = async (req, res) => {
     verifyCode: await bcrypt.hash(code, 8),
     verifyExpires: Date.now() + 10 * 60 * 1000,
   })
-  await sendCodeEmail(email, code, 'verify')
+  const sent = await sendCodeEmail(email, code, 'verify')
 
   setAuthCookies(res, user._id)
-  res.status(201).json({ user: publicUser(user), emailSent: !!process.env.EMAIL_USER })
+  // Dev convenience: no SMTP configured → return the code so the flow is testable
+  const devCode = !sent && process.env.NODE_ENV !== 'production' ? code : undefined
+  res.status(201).json({ user: publicUser(user), emailSent: sent, devCode })
 }
 
 // POST /api/auth/login
@@ -120,7 +122,8 @@ export const sendVerifyCode = async (req, res) => {
   user.verifyExpires = Date.now() + 10 * 60 * 1000
   await user.save()
   const sent = await sendCodeEmail(user.email, code, 'verify')
-  res.json({ sent, message: sent ? 'Code sent' : 'Email not configured — check server logs' })
+  const devCode = !sent && process.env.NODE_ENV !== 'production' ? code : undefined
+  res.json({ sent, devCode, message: sent ? 'Code sent' : 'Email not configured' })
 }
 
 // POST /api/auth/verify-email { code }
@@ -149,8 +152,10 @@ export const forgotPassword = async (req, res) => {
   user.resetCode = await bcrypt.hash(code, 8)
   user.resetExpires = Date.now() + 10 * 60 * 1000
   await user.save()
-  await sendCodeEmail(email, code, 'reset')
-  res.json({ sent: true })
+  const sent = await sendCodeEmail(email, code, 'reset')
+  // Dev convenience — SMTP off in development → return the code for testing
+  const devCode = !sent && process.env.NODE_ENV !== 'production' ? code : undefined
+  res.json({ sent: true, devCode })
 }
 
 // POST /api/auth/reset { email, code, password }
