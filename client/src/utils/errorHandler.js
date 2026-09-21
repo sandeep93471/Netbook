@@ -2,11 +2,11 @@ import toast from 'react-hot-toast'
 import { apiError } from '../api/client'
 
 // Axios errors carry the server's message in response.data — surface that.
-export const getFirebaseErrorMessage = (error) => apiError(error)
+export const getErrorMessage = (error) => apiError(error)
 
 // Show error toast
 export const showError = (error) => {
-  const message = getFirebaseErrorMessage(error)
+  const message = getErrorMessage(error)
   toast.error(message, { duration: 4000 })
 }
 

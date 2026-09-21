@@ -23,7 +23,7 @@ export const fetchMe = async () => {
   return data.user
 }
 
-// One-shot auth check on app load — replaces Firebase's onAuthStateChanged
+// One-shot auth check on app load — restores the session from the cookie
 export const subscribeToAuth = (callback) => {
   fetchMe()
     .then((user) => callback(user))

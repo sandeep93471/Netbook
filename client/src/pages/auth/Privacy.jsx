@@ -8,7 +8,7 @@ const Privacy = () => (
       <Typography variant="body2" className="text-[#64748b] dark:text-[#94a3b8] space-y-3 block">
         <span className="block">1. We store your name, email, avatar, and the content you post on our MongoDB database.</span>
         <span className="block">2. Images you upload are hosted on Cloudinary.</span>
-        <span className="block">3. We use Firebase Authentication — passwords are never stored by us.</span>
+        <span className="block">3. Passwords are hashed with bcrypt — never stored or logged in plain text.</span>
         <span className="block">4. Chat messages are stored in Firestore and visible only to participants.</span>
         <span className="block">5. This is a learning project — do not share sensitive personal information.</span>
       </Typography>

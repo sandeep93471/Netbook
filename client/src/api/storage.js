@@ -1,4 +1,4 @@
-// Cloudinary unsigned upload — same helper as the Firebase version.
+// Cloudinary unsigned upload — files go straight to Cloudinary, URL is stored.
 // Requires VITE_CLOUDINARY_CLOUD_NAME + VITE_CLOUDINARY_UPLOAD_PRESET in .env
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
 const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET
