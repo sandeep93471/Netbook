@@ -1,0 +1,35 @@
+# One command runs the whole stack:  docker compose up --build
+# In production you'd use Atlas instead of the mongo service —
+# just point MONGODB_URI at it and drop that service.
+services:
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    # No ports published — only reachable inside the compose network
+
+  server:
+    build: ./server
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      CLIENT_URL: http://localhost:8080
+      MONGODB_URI: mongodb://mongo:27017/netbook
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+    depends_on:
+      - mongo
+    # No port published — nginx proxies to it, single entry point
+
+  client:
+    build: ./client
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+
+volumes:
+  mongo-data:
