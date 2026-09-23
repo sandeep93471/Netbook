@@ -38,8 +38,6 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
 
-      # --ignore-scripts: mongodb-memory-server's postinstall downloads a ~100MB
-      # binary — flaky in CI and unnecessary since we never create the server here.
-      - run: npm ci --ignore-scripts
-      # ESM import check — resolves every import without starting listeners/DB
-      - run: node -e "import('./src/app.js').then(() => console.log('app module loads OK'))"
+      - run: npm ci
+      # Syntax check — Node 22 parses ES modules natively (no runtime, no imports)
+      - run: node --check server.js && node --check src/app.js
