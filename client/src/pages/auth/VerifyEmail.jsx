@@ -48,7 +48,7 @@ const VerifyEmail = () => {
     setError('')
     try {
       await verifyEmail(code.trim())
-      dispatch(setUser({ ...user, verified: true }))
+      dispatch(setUser({ ...user, emailVerified: true }))
       navigate('/')
     } catch (err) {
       setError(apiError(err))
