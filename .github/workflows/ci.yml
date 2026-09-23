@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: client/package-lock.json
 
@@ -34,9 +34,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
 
       - run: npm ci
-      - run: node --check server.js && node --check src/app.js   # syntax gate
+      # ESM import check — resolves every import without starting listeners/DB
+      - run: node -e "import('./src/app.js').then(() => console.log('app module loads OK'))"
