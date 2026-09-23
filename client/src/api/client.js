@@ -5,6 +5,7 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   withCredentials: true, // sends httpOnly cookies
+  timeout: 60_000, // never spin forever — Render cold starts can take ~40s
 })
 
 // Silent refresh: on 401 → POST /auth/refresh → retry the original request once.

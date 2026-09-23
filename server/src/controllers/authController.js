@@ -41,12 +41,15 @@ export const register = async (req, res) => {
     verifyCode: await bcrypt.hash(code, 8),
     verifyExpires: Date.now() + 10 * 60 * 1000,
   })
-  const sent = await sendCodeEmail(email, code, 'verify')
-
   setAuthCookies(res, user._id)
+  // Send the code in the background — SMTP on cloud hosts can be slow, so the
+  // user gets to the verify page immediately instead of a frozen button.
+  sendCodeEmail(email, code, 'verify')
+    .then((sent) => { if (!sent) console.warn(`[mailer] verify email not sent to ${email}`) })
+    .catch((err) => console.error('[mailer] verify email failed:', err.message))
   // Dev convenience: no SMTP configured → return the code so the flow is testable
-  const devCode = !sent && process.env.NODE_ENV !== 'production' ? code : undefined
-  res.status(201).json({ user: publicUser(user), emailSent: sent, devCode })
+  const devCode = process.env.EMAIL_USER || process.env.NODE_ENV === 'production' ? undefined : code
+  res.status(201).json({ user: publicUser(user), emailSent: true, devCode })
 }
 
 // POST /api/auth/login

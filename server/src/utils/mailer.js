@@ -2,10 +2,18 @@ import nodemailer from 'nodemailer'
 
 const canSend = () => process.env.EMAIL_USER && process.env.EMAIL_PASS
 
+// Explicit host/port + timeouts — a dead SMTP connection must fail fast
+// instead of hanging the register request forever (cloud hosts can stall
+// on Gmail's implicit config; STARTTLS on 587 is the most reliable route).
 const transporter = canSend()
   ? nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
     })
   : null
 
