@@ -20,7 +20,9 @@ import { errorHandler } from './middleware/error.js'
 const app = express()
 
 app.set('trust proxy', 1) // behind Render/Proxies — needed for secure cookies
-app.use(helmet())
+// CORP 'cross-site' — the API is consumed by the client on a different origin
+// (Vercel → Render); default 'same-origin' makes browsers discard responses.
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-site' } }))
 app.use(compression())
 app.use(morgan('dev'))
 app.use(express.json({ limit: '1mb' }))
