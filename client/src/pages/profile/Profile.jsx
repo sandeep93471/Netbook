@@ -106,7 +106,8 @@ const Profile = () => {
   return (
     <div className="max-w-2xl mx-auto">
       {/* Cover Photo */}
-      <div className="relative h-48 md:h-64 rounded-xl overflow-hidden bg-gradient-to-r from-blue-400 to-blue-600">
+      {/* Fixed 16:5 aspect — matches the cropper exactly, so what you crop is what shows */}
+      <div className="relative w-full aspect-[16/5] rounded-xl overflow-hidden bg-gradient-to-r from-blue-400 to-blue-600">
         {profile.coverURL && (
           <img src={profile.coverURL} alt="Cover" className="w-full h-full object-cover" />
         )}
