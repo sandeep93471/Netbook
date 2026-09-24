@@ -206,7 +206,7 @@ const Profile = () => {
             </Typography>
           </div>
           <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-            {photoHistory.map((p, i) =>
+            {[...photoHistory].sort((a, b) => (b.at || 0) - (a.at || 0)).map((p, i) =>
               isOwnProfile ? (
                 <button
                   key={i}

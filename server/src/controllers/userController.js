@@ -45,7 +45,12 @@ export const updateMe = async (req, res) => {
   }
   if (photoURL) { user.photoURL = photoURL; historyAdds.push({ url: photoURL, type: 'avatar', at: Date.now() }) }
   if (coverURL) { user.coverURL = coverURL; historyAdds.push({ url: coverURL, type: 'cover', at: Date.now() }) }
-  user.photoHistory.push(...historyAdds)
+  // Dedupe by URL — reusing a photo bumps its timestamp, never duplicates
+  historyAdds.forEach((add) => {
+    const idx = user.photoHistory.findIndex((p) => p.url === add.url)
+    if (idx >= 0) user.photoHistory[idx].at = add.at
+    else user.photoHistory.push(add)
+  })
   await user.save()
   res.json({ user: shapeUser(user) })
 }

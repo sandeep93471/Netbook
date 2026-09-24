@@ -140,16 +140,21 @@ const userSlice = createSlice({
       })
       .addCase(updateUserProfile.fulfilled, (state, action) => {
         const { _historyAdds, ...user } = action.payload
+        // Dedupe by URL — drop stale copies of photos being re-added, append fresh
+        const mergeHistory = (old = []) => {
+          const newUrls = new Set(_historyAdds.map((a) => a.url))
+          return [...old.filter((p) => !newUrls.has(p.url)), ..._historyAdds]
+        }
         const existing = state.entities[user.uid]
         const merged = existing
-          ? { ...existing, ...user, photoHistory: [...(existing.photoHistory || []), ..._historyAdds] }
+          ? { ...existing, ...user, photoHistory: mergeHistory(existing.photoHistory) }
           : user
         usersAdapter.upsertOne(state, merged)
         if (state.currentProfile?.uid === user.uid) {
           state.currentProfile = {
             ...state.currentProfile,
             ...user,
-            photoHistory: [...(state.currentProfile.photoHistory || []), ..._historyAdds],
+            photoHistory: mergeHistory(state.currentProfile.photoHistory),
           }
         }
       })
