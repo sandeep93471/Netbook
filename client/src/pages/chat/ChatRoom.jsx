@@ -50,6 +50,27 @@ const textOn = (bg) => (relLum(bg) > 0.35 ? '#050505' : '#ffffff')
 // Resolve a display name for any participant id
 const nameOf = (convo, uid) => convo?.participantInfo?.[uid]?.displayName || 'User'
 
+// "Today" / "Yesterday" / "12 Mar" style divider labels
+const dayLabel = (ts) => {
+  const d = new Date(ts)
+  const today = new Date()
+  if (d.toDateString() === today.toDateString()) return 'Today'
+  const yesterday = new Date(today.getTime() - 864e5)
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
+  return d.toLocaleDateString([], {
+    day: 'numeric', month: 'short',
+    year: d.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
+  })
+}
+
+const DayDivider = ({ label }) => (
+  <div className="flex items-center gap-3 my-4">
+    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</span>
+    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+  </div>
+)
+
 const ChatRoom = () => {
   const dispatch = useDispatch()
   const { user } = useSelector((state) => state.auth)
@@ -228,6 +249,11 @@ const ChatRoom = () => {
                     secondary={convo.lastMessage?.slice(0, 30) || 'No messages yet'}
                     slotProps={{ secondary: { noWrap: true } }}
                   />
+                  {convo.lastMessageAt && (
+                    <Typography variant="caption" color="text.secondary" className="pr-1 shrink-0">
+                      {timeAgo(convo.lastMessageAt)}
+                    </Typography>
+                  )}
                 </ListItemButton>
               </ListItem>
             )
@@ -237,7 +263,7 @@ const ChatRoom = () => {
           <EmptyState
             icon={<ForumIcon className="text-gray-300" sx={{ fontSize: 48 }} />}
             title="No conversations"
-            description="Visit someone's profile and hit Message, or create a group"
+            description="Open a friend's profile and hit Message, or create a group"
           />
         )}
       </Paper>
@@ -258,7 +284,7 @@ const ChatRoom = () => {
             ))}
             {candidates.length === 0 && (
               <Typography variant="body2" color="text.secondary" className="px-2 py-3">
-                Follow people or add friends first to invite them.
+                Add friends first to invite them to a group.
               </Typography>
             )}
           </List>
@@ -482,69 +508,106 @@ const ChatRoom = () => {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto px-4 py-3">
               {(() => {
                 // Last message I sent — read receipts shown under it (Facebook-style)
                 const others = (activeConvo?.participants || []).filter((p) => p !== user.uid)
                 const lastMine = [...messages].reverse().find((m) => m.senderId === user.uid)
                 const seenByAll = lastMine && others.length > 0 &&
                   others.every((p) => (lastMine.read || []).includes(p))
-                return messages.map((msg) => {
+                const photoOf = (uid) => activeConvo?.participantInfo?.[uid]?.photoURL || ''
+                return messages.map((msg, i) => {
                 const mine = msg.senderId === user.uid
+                const prev = messages[i - 1]
+                const next = messages[i + 1]
+                const samePrev = prev && prev.senderId === msg.senderId
+                const sameNext = next && next.senderId === msg.senderId
+                const showDay = !prev || dayLabel(prev.createdAt) !== dayLabel(msg.createdAt)
+                // Messenger-style corner shaping — flattens toward the group
+                const radius = mine
+                  ? `rounded-2xl ${samePrev ? 'rounded-tr-md' : ''} ${sameNext ? 'rounded-br-md' : 'rounded-br-sm'}`
+                  : `rounded-2xl ${samePrev ? 'rounded-tl-md' : ''} ${sameNext ? 'rounded-bl-md' : 'rounded-bl-sm'}`
                 return (
-                  <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                    <div className="max-w-[70%]">
-                      {display.isGroup && !mine && (
-                        <Typography variant="caption" color="text.secondary" className="pl-2">
-                          {nameOf(activeConvo, msg.senderId)}
-                        </Typography>
-                      )}
-                      <Paper
-                        elevation={1}
-                        className="px-4 py-2 rounded-2xl relative group cursor-default"
-                        sx={mine ? { background: theme, color: textOn(theme) } : {}}
-                        onContextMenu={(e) => openMsgMenu(e, msg)}
-                        onDoubleClick={() => reactToMessage(msg.id, '❤️').catch(() => {})}
-                      >
-                        <Typography variant="body2">{msg.text}</Typography>
-                        <Typography variant="caption" className={`block text-right mt-1 ${
-                          mine ? (textOn(theme) === '#ffffff' ? 'text-white/70' : 'text-black/60') : 'text-gray-400'
-                        }`}>
-                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </Typography>
-                        {/* hover actions — like Messenger's bubble menu */}
-                        <IconButton
-                          size="small" aria-label="Message options"
-                          className="absolute -top-3 right-1 opacity-0 group-hover:opacity-100 transition bg-white dark:bg-[#3A3B3C] shadow"
-                          sx={{ width: 22, height: 22 }}
-                          onClick={(e) => openMsgMenu(e, msg)}
-                        >
-                          <MoreVertIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </Paper>
-                      {/* reaction chips under the bubble */}
-                      {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                        <div className={`flex gap-0.5 mt-0.5 ${mine ? 'justify-end' : 'justify-start'} pl-1`}>
-                          {[...new Set(Object.values(msg.reactions))].map((e) => (
-                            <span key={e} className="text-xs bg-gray-100 dark:bg-[#3A3B3C] rounded-full px-1 shadow-sm">{e}</span>
-                          ))}
+                  <div key={msg.id}>
+                    {showDay && <DayDivider label={dayLabel(msg.createdAt)} />}
+                    <div className={`flex items-end gap-2 ${mine ? 'justify-end' : 'justify-start'} ${samePrev && !showDay ? 'mt-0.5' : 'mt-3'}`}>
+                      {/* avatar slot — fixed width keeps bubbles aligned; shows on last of group */}
+                      {!mine && (
+                        <div className="w-7 shrink-0">
+                          {!sameNext && (
+                            <Avatar src={photoOf(msg.senderId)} sx={{ width: 28, height: 28 }}>
+                              {nameOf(activeConvo, msg.senderId)?.charAt(0)}
+                            </Avatar>
+                          )}
                         </div>
                       )}
-                      {mine && msg.id === lastMine?.id && (
-                        <Typography variant="caption" className={`block text-right pr-1 ${
-                          seenByAll ? 'text-[#1976d2]' : 'text-gray-400'
-                        }`}>
-                          {seenByAll ? '✓✓ Seen' : '✓ Sent'}
-                        </Typography>
-                      )}
+                      <div className="max-w-[70%]">
+                        {display.isGroup && !mine && !samePrev && (
+                          <Typography variant="caption" color="text.secondary" className="pl-3 block">
+                            {nameOf(activeConvo, msg.senderId)}
+                          </Typography>
+                        )}
+                        <Paper
+                          elevation={0}
+                          className={`px-3.5 py-2 relative group cursor-default ${radius} ${mine ? '' : 'border'}`}
+                          sx={mine
+                            ? { background: `linear-gradient(135deg, ${theme}, ${theme}dd)`, color: textOn(theme) }
+                            : { borderColor: 'divider', bgcolor: 'background.default' }}
+                          onContextMenu={(e) => openMsgMenu(e, msg)}
+                          onDoubleClick={() => reactToMessage(msg.id, '❤️').catch(() => {})}
+                        >
+                          <Typography variant="body2" className="whitespace-pre-wrap break-words">{msg.text}</Typography>
+                          <Typography variant="caption" className={`block text-right mt-0.5 text-[10px] ${
+                            mine ? (textOn(theme) === '#ffffff' ? 'text-white/70' : 'text-black/60') : 'text-gray-400'
+                          }`}>
+                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Typography>
+                          {/* hover actions — like Messenger's bubble menu */}
+                          <IconButton
+                            size="small" aria-label="Message options"
+                            className={`absolute -top-3 opacity-0 group-hover:opacity-100 transition bg-white dark:bg-[#3A3B3C] shadow ${mine ? 'left-1' : 'right-1'}`}
+                            sx={{ width: 22, height: 22 }}
+                            onClick={(e) => openMsgMenu(e, msg)}
+                          >
+                            <MoreVertIcon sx={{ fontSize: 14 }} />
+                          </IconButton>
+                        </Paper>
+                        {/* reaction chips under the bubble */}
+                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                          <div className={`flex gap-0.5 mt-0.5 ${mine ? 'justify-end' : 'justify-start'} pl-1`}>
+                            {[...new Set(Object.values(msg.reactions))].map((e) => (
+                              <span key={e} className="text-xs bg-gray-100 dark:bg-[#3A3B3C] rounded-full px-1.5 py-0.5 shadow-sm">{e}</span>
+                            ))}
+                          </div>
+                        )}
+                        {mine && msg.id === lastMine?.id && (
+                          <Typography variant="caption" className={`block text-right pr-1 ${
+                            seenByAll ? 'text-[#1976d2]' : 'text-gray-400'
+                          }`}>
+                            {seenByAll ? '✓✓ Seen' : '✓ Sent'}
+                          </Typography>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
               })})()}
+              {/* Typing indicator — animated bubble, not plain text */}
               {typingUsers.length > 0 && (
-                <Typography variant="caption" color="text.secondary" className="italic px-1">
-                  {typingNames} {typingUsers.length > 1 ? 'are' : 'is'} typing...
-                </Typography>
+                <div className="flex items-end gap-2 mt-3">
+                  <Avatar sx={{ width: 28, height: 28 }}>
+                    {typingNames.charAt(0)}
+                  </Avatar>
+                  <div className="flex items-center gap-1 px-4 py-3 rounded-2xl rounded-bl-sm bg-white dark:bg-[#3A3B3C] border border-gray-200 dark:border-gray-700 shadow-sm">
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"
+                        style={{ animationDelay: `${i * 0.15}s` }}
+                      />
+                    ))}
+                  </div>
+                </div>
               )}
               {/* Message context menu — quick reactions + unsend */}
               <Menu
@@ -582,15 +645,26 @@ const ChatRoom = () => {
                   Only admins can send messages in this group
                 </Typography>
               ) : (
-                <div className="flex gap-2">
-                  <TextField
-                    fullWidth size="small" placeholder="Type a message..."
-                    value={text} onChange={(e) => { setText(e.target.value); handleTyping() }}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                  />
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 rounded-3xl bg-gray-100 dark:bg-[#3A3B3C] px-4 py-1">
+                    <TextField
+                      fullWidth multiline maxRows={4} variant="standard"
+                      placeholder="Aa"
+                      value={text}
+                      onChange={(e) => { setText(e.target.value); handleTyping() }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+                      slotProps={{ input: { disableUnderline: true } }}
+                    />
+                  </div>
                   <IconButton onClick={handleSend} disabled={!text.trim()}
-                    sx={{ color: theme, minWidth: 44, minHeight: 44 }} aria-label="Send message">
-                    <SendIcon />
+                    sx={{
+                      width: 40, height: 40, color: '#fff',
+                      background: `linear-gradient(135deg, ${theme}, ${theme}bb)`,
+                      '&:hover': { background: theme },
+                      '&.Mui-disabled': { background: 'rgba(0,0,0,0.12)', color: 'rgba(255,255,255,0.7)' },
+                    }}
+                    aria-label="Send message">
+                    <SendIcon fontSize="small" />
                   </IconButton>
                 </div>
               )}

@@ -23,6 +23,12 @@ export const getOrCreateDM = async (req, res) => {
   })
   if (existing) return res.json({ conversationId: existing._id })
 
+  // New DMs are friends-only — existing chats stay readable after unfriending
+  const isFriend = (req.user.friends || []).some((f) => f.toString() === otherId)
+  if (!isFriend) {
+    return res.status(403).json({ message: 'You can only message friends' })
+  }
+
   const other = await User.findById(otherId)
   if (!other) return res.status(404).json({ message: 'User not found' })
   const convo = await Conversation.create({

@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { Avatar, Paper, Typography, Button, IconButton, Menu, MenuItem, Tooltip, Tabs, Tab, TextField, InputAdornment, List, ListItem, ListItemAvatar, ListItemText } from '@mui/material'
 import { ProfileSkeleton } from '../../components/common/SkeletonLoader'
 import { fetchUserProfile, selectCurrentProfile, selectUsersLoading, selectUserById, updateUserProfile } from '../../redux/slices/userSlice'
+import { selectFriendship } from '../../redux/slices/friendSlice'
 import { selectPostsByUserId } from '../../redux/selectors/postSelectors'
 import { getOrCreateConversation } from '../../api/chat'
 import api from '../../api/client'
@@ -33,6 +34,7 @@ const Profile = () => {
   const loading = useSelector(selectUsersLoading)
   const { user } = useSelector((state) => state.auth)
   const userPosts = useSelector((state) => selectPostsByUserId(state, userId))
+  const { status: friendStatus } = useSelector((state) => selectFriendship(state, userId))
 
   // Crop state: { src, kind: 'avatar' | 'cover' }
   const [cropState, setCropState] = useState(null)
@@ -184,9 +186,11 @@ const Profile = () => {
           {!isOwnProfile && (
             <div className="flex gap-3 mt-4 flex-wrap justify-center">
               <FriendButton targetUserId={userId} targetName={profile.displayName} />
-              <Button variant="outlined" size="small" startIcon={<ChatIcon />} onClick={handleMessage}>
-                Message
-              </Button>
+              {friendStatus === 'friends' && (
+                <Button variant="outlined" size="small" startIcon={<ChatIcon />} onClick={handleMessage}>
+                  Message
+                </Button>
+              )}
             </div>
           )}
         </div>
