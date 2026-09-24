@@ -8,5 +8,7 @@ const friendRequestSchema = new mongoose.Schema({
 }, { timestamps: true })
 
 friendRequestSchema.index({ from: 1, to: 1 }, { unique: true })
+friendRequestSchema.index({ to: 1, status: 1 })   // received-requests query
+friendRequestSchema.index({ from: 1, status: 1 }) // sent-requests + status lookup
 
 export default mongoose.model('FriendRequest', friendRequestSchema)

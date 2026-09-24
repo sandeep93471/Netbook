@@ -92,15 +92,13 @@ export const searchUsers = async (req, res) => {
 // GET /api/users/suggested — people I'm not friends with yet
 export const suggestedUsers = async (req, res) => {
   const me = req.user
-  const users = await User.find({ _id: { $ne: me._id } })
-    .select('displayName photoURL bio friends')
+  // Exclude friends in the query — no need to fetch their ids and filter here
+  const users = await User.find({ _id: { $ne: me._id }, friends: { $ne: me._id } })
+    .select('displayName photoURL bio')
     .limit(10)
     .lean()
-  const myFriends = (me.friends || []).map((f) => f.toString())
   res.json({
-    users: users
-      .filter((u) => !myFriends.includes(u._id.toString()))
-      .map((u) => ({ uid: u._id, displayName: u.displayName, photoURL: u.photoURL, bio: u.bio })),
+    users: users.map((u) => ({ uid: u._id, displayName: u.displayName, photoURL: u.photoURL, bio: u.bio })),
   })
 }
 

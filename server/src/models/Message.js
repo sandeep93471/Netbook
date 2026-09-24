@@ -8,4 +8,7 @@ const messageSchema = new mongoose.Schema({
   reactions: { type: Map, of: String, default: {} }, // uid → emoji
 }, { timestamps: true })
 
+// Chat history pagination per conversation
+messageSchema.index({ conversation: 1, createdAt: 1 })
+
 export default mongoose.model('Message', messageSchema)

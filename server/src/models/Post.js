@@ -23,4 +23,8 @@ const postSchema = new mongoose.Schema({
   videoURL: { type: String, default: '' }, // reels — max 5 min enforced client-side + upload preset
 }, { timestamps: true })
 
+// Feed sort + per-profile post lists hit these constantly
+postSchema.index({ createdAt: -1 })
+postSchema.index({ user: 1, createdAt: -1 })
+
 export default mongoose.model('Post', postSchema)
