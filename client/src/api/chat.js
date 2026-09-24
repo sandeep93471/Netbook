@@ -1,5 +1,6 @@
 import api from './client'
 import { getSocket } from './socket'
+import { upsertMessage, removeMessage } from '../redux/slices/chatSlice'
 
 // Mirrors the old api/chat.js signatures so components swap import path only.
 
@@ -43,8 +44,10 @@ export const unsendMessage = (messageId) =>
 export const reactToMessage = (messageId, emoji) =>
   api.put(`/chat/messages/${messageId}/react`, { emoji })
 
-// REST fetch + socket updates — same subscribe/unsubscribe contract as before
-export const subscribeToMessages = (conversationId, callback) => {
+// REST fetch for the initial load; socket events then apply incrementally
+// (dispatch → upsert/remove) so a new message renders instantly instead of
+// refetching the whole history on every event.
+export const subscribeToMessages = (conversationId, callback, dispatch) => {
   const load = () =>
     api.get(`/chat/conversations/${conversationId}/messages`)
       .then((r) => callback(r.data.messages))
@@ -52,24 +55,33 @@ export const subscribeToMessages = (conversationId, callback) => {
   load()
   const s = getSocket()
   s.emit('conversation:join', conversationId)
+  const isThisConvo = (msg) => String(msg.conversation) === String(conversationId)
   const handler = (msg) => {
-    if (msg.conversation?.toString() === conversationId || msg.id) load()
+    if (dispatch && isThisConvo(msg)) dispatch(upsertMessage(msg))
+    else if (msg.conversation?.toString() === conversationId || msg.id) load()
   }
-  const updateHandler = () => load()
+  const updateHandler = (msg) => {
+    if (dispatch && isThisConvo(msg)) dispatch(upsertMessage(msg))
+    else load()
+  }
+  const deleteHandler = ({ id }) => {
+    if (dispatch) dispatch(removeMessage(id))
+    else load()
+  }
   const seenHandler = ({ conversationId: cid }) => {
-    if (cid === conversationId) load()
+    if (cid === conversationId) load() // receipts need the read[] arrays — refetch
   }
   s.on('message:new', handler)
   s.on('message:seen', seenHandler)
   s.on('message:updated', updateHandler)
-  s.on('message:deleted', updateHandler)
-  s.on('conversation:updated', updateHandler)
+  s.on('message:deleted', deleteHandler)
+  s.on('conversation:updated', load) // convo metadata changed — not a message
   return () => {
     s.off('message:new', handler)
     s.off('message:seen', seenHandler)
     s.off('message:updated', updateHandler)
-    s.off('message:deleted', updateHandler)
-    s.off('conversation:updated', updateHandler)
+    s.off('message:deleted', deleteHandler)
+    s.off('conversation:updated', load)
   }
 }
 

@@ -27,6 +27,7 @@ import {
 } from '../../api/chat'
 import {
   setConversations, setActiveConversation, setMessages,
+  addMessage, replaceTempMessage, removeMessage,
   selectConversations, selectConversationsLoaded, selectActiveConversation, selectMessages,
 } from '../../redux/slices/chatSlice'
 import { fetchUserProfile, selectUserById } from '../../redux/slices/userSlice'
@@ -125,7 +126,7 @@ const ChatRoom = () => {
     if (!activeConversation || !user?.uid) return
     const unsub = subscribeToMessages(activeConversation, (msgs) => {
       dispatch(setMessages(msgs))
-    })
+    }, dispatch)
     markConversationRead(activeConversation, user.uid).catch(() => {})
     return unsub
   }, [activeConversation, user?.uid, dispatch])
@@ -165,8 +166,21 @@ const ChatRoom = () => {
     }
     clearTimeout(typingTimeoutRef.current)
     setTyping(activeConversation, user.uid, false).catch(() => {})
-    await sendMessage(activeConversation, user.uid, text.trim())
+    // Optimistic — bubble renders instantly, server confirms in background
+    const trimmed = text.trim()
+    const tempId = `temp-${Date.now()}`
+    dispatch(addMessage({
+      id: tempId, conversation: activeConversation,
+      senderId: user.uid, text: trimmed, createdAt: Date.now(),
+      read: [], pending: true,
+    }))
     setText('')
+    sendMessage(activeConversation, user.uid, trimmed)
+      .then((m) => dispatch(replaceTempMessage({ tempId, message: m })))
+      .catch(() => {
+        dispatch(removeMessage(tempId))
+        showError({ message: 'Message failed to send' })
+      })
   }
 
   const handleCreateGroup = async () => {
@@ -551,7 +565,7 @@ const ChatRoom = () => {
                           elevation={0}
                           className={`px-3.5 py-2 relative group cursor-default ${radius} ${mine ? '' : 'border'}`}
                           sx={mine
-                            ? { background: `linear-gradient(135deg, ${theme}, ${theme}dd)`, color: textOn(theme) }
+                            ? { background: `linear-gradient(135deg, ${theme}, ${theme}dd)`, color: textOn(theme), opacity: msg.pending ? 0.6 : 1 }
                             : { borderColor: 'divider', bgcolor: 'background.default' }}
                           onContextMenu={(e) => openMsgMenu(e, msg)}
                           onDoubleClick={() => reactToMessage(msg.id, '❤️').catch(() => {})}
