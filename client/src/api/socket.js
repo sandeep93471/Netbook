@@ -13,7 +13,7 @@ const fetchToken = () =>
 
 export const getSocket = () => {
   if (!socket) {
-    const origin = import.meta.env.VITE_API_URL?.replace('/api', '') || '/'
+    const origin = import.meta.env.VITE_API_URL?.replace('/api', '') || window.location.origin
     socket = io(origin, { autoConnect: false, withCredentials: true })
     fetchToken()
       .then((token) => { socket.auth = { token } })

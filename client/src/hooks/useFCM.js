@@ -23,7 +23,7 @@ export const useFCM = () => {
 
       // Auto-clear after 5 seconds
       setTimeout(() => setForegroundNotification(null), 5000)
-    }).then((u) => { unsub = u })
+    }).then((u) => { if (typeof u === 'function') unsub = u })
 
     return () => {
       cancelled = true
