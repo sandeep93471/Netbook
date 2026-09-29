@@ -51,12 +51,11 @@ export const loginWithGoogleThunk = createAsyncThunk(
 export const logoutUser = createAsyncThunk(
   'auth/logout',
   async () => {
-    // Always clear local state — a failed request (e.g. expired token) must
-    // not leave the user stuck "logged in" until refresh.
+    // Socket first — presence drops instantly even if the server call hangs.
+    closeSocket()
     try {
       await logout()
     } catch { /* cookie may already be gone — fine */ }
-    closeSocket()
   }
 )
 
@@ -94,6 +93,14 @@ const authSlice = createSlice({
       .addCase(loginWithGoogleThunk.pending, pending)
       .addCase(loginWithGoogleThunk.fulfilled, fulfilled)
       .addCase(loginWithGoogleThunk.rejected, rejected)
+      // Clear instantly on dispatch — the server call can hang on a cold
+      // server, but the user clicked "log out": they're out NOW. The cookie
+      // cleanup completes in the background.
+      .addCase(logoutUser.pending, (state) => {
+        state.user = null
+        state.isAuthenticated = false
+        state.loading = false
+      })
       .addCase(logoutUser.fulfilled, (state) => {
         state.user = null
         state.isAuthenticated = false
