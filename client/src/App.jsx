@@ -8,24 +8,43 @@ import ErrorBoundary from './components/common/ErrorBoundary'
 import AppLayout from './components/layout/AppLayout'
 import ProtectedRoute from './components/common/ProtectedRoute'
 
-// Code splitting: each page becomes its own chunk, downloaded on-demand
-const Login = lazy(() => import('./pages/auth/Login'))
-const Register = lazy(() => import('./pages/auth/Register'))
-const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'))
-const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmail'))
-const Terms = lazy(() => import('./pages/auth/Terms'))
-const Privacy = lazy(() => import('./pages/auth/Privacy'))
-const Feed = lazy(() => import('./pages/home/Feed'))
-const Explore = lazy(() => import('./pages/home/Explore'))
-const Profile = lazy(() => import('./pages/profile/Profile'))
-const EditProfile = lazy(() => import('./pages/profile/EditProfile'))
-const ChatRoom = lazy(() => import('./pages/chat/ChatRoom'))
-const Notifications = lazy(() => import('./pages/home/Notifications'))
-const PostDetail = lazy(() => import('./pages/home/PostDetail'))
-const Saved = lazy(() => import('./pages/home/Saved'))
-const Friends = lazy(() => import('./pages/home/Friends'))
-const TagFeed = lazy(() => import('./pages/home/TagFeed'))
-const Reels = lazy(() => import('./pages/home/Reels'))
+// Code splitting: each page becomes its own chunk, downloaded on-demand.
+// lazyWithRetry: if a chunk is gone because a deploy landed while the app was
+// open (the white-page bug), reload once to fetch the fresh build — React
+// swallows lazy() rejections before window.unhandledrejection can see them,
+// so the retry must live inside the importer itself.
+const lazyWithRetry = (importer) => lazy(async () => {
+  try {
+    const mod = await importer()
+    sessionStorage.removeItem('lazy-reload')
+    return mod
+  } catch (err) {
+    if (!sessionStorage.getItem('lazy-reload')) {
+      sessionStorage.setItem('lazy-reload', '1')
+      window.location.reload()
+      return new Promise(() => {}) // hold until reload
+    }
+    throw err
+  }
+})
+
+const Login = lazyWithRetry(() => import('./pages/auth/Login'))
+const Register = lazyWithRetry(() => import('./pages/auth/Register'))
+const ForgotPassword = lazyWithRetry(() => import('./pages/auth/ForgotPassword'))
+const VerifyEmail = lazyWithRetry(() => import('./pages/auth/VerifyEmail'))
+const Terms = lazyWithRetry(() => import('./pages/auth/Terms'))
+const Privacy = lazyWithRetry(() => import('./pages/auth/Privacy'))
+const Feed = lazyWithRetry(() => import('./pages/home/Feed'))
+const Explore = lazyWithRetry(() => import('./pages/home/Explore'))
+const Profile = lazyWithRetry(() => import('./pages/profile/Profile'))
+const EditProfile = lazyWithRetry(() => import('./pages/profile/EditProfile'))
+const ChatRoom = lazyWithRetry(() => import('./pages/chat/ChatRoom'))
+const Notifications = lazyWithRetry(() => import('./pages/home/Notifications'))
+const PostDetail = lazyWithRetry(() => import('./pages/home/PostDetail'))
+const Saved = lazyWithRetry(() => import('./pages/home/Saved'))
+const Friends = lazyWithRetry(() => import('./pages/home/Friends'))
+const TagFeed = lazyWithRetry(() => import('./pages/home/TagFeed'))
+const Reels = lazyWithRetry(() => import('./pages/home/Reels'))
 
 const PageLoading = () => (
   <div className="flex justify-center py-20"><CircularProgress /></div>
