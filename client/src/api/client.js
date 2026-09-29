@@ -1,9 +1,12 @@
 import axios from 'axios'
 
-// Same-origin /api by default (Vite proxy in dev, same host in prod);
-// set VITE_API_URL to point at a remote server.
+// Always same-origin /api — Vite proxies it in dev, Vercel rewrites it to
+// Render in prod (client/vercel.json). First-party cookies: browsers never
+// drop them, so sessions survive — third-party cookies get blocked and the
+// session died after a few hours. VITE_API_URL is still used by socket.js
+// (WebSockets can't ride the HTTP rewrite).
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: '/api',
   withCredentials: true, // sends httpOnly cookies
   timeout: 60_000, // never spin forever — Render cold starts can take ~40s
 })

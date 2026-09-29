@@ -20,11 +20,14 @@ export const initSocket = (httpServer) => {
     cors: { origin: process.env.CLIENT_URL, credentials: true },
   })
 
-  // Authenticate sockets via the same httpOnly cookie
+  // Authenticate sockets — handshake token first (the auth cookie lives on the
+  // Vercel domain and isn't visible to a cross-origin WS connect), cookie
+  // fallback keeps same-origin setups working.
   io.use(async (socket, next) => {
     try {
-      const cookies = cookie.parse(socket.request.headers.cookie || '')
-      const { id } = verifyAccess(cookies.access_token)
+      const token = socket.handshake.auth?.token
+        || cookie.parse(socket.request.headers.cookie || '').access_token
+      const { id } = verifyAccess(token)
       socket.userId = id
       next()
     } catch {

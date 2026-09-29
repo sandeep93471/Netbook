@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { OAuth2Client } from 'google-auth-library'
 import User from '../models/User.js'
-import { setAuthCookies, clearAuthCookies, signRefresh, verifyRefresh } from '../utils/jwt.js'
+import { setAuthCookies, clearAuthCookies, signAccess, signRefresh, verifyRefresh } from '../utils/jwt.js'
 import { sendCodeEmail } from '../utils/mailer.js'
 
 const sixDigit = () => crypto.randomInt(100000, 999999).toString()
@@ -100,6 +100,13 @@ export const googleAuth = async (req, res) => {
 
 // GET /api/auth/me — session restore on app load
 export const me = (req, res) => res.json({ user: publicUser(req.user) })
+
+// GET /api/auth/socket-token — short-lived token for the socket handshake.
+// WebSockets connect straight to Render (Vercel can't proxy WS), so the
+// httpOnly cookie on the Vercel domain isn't visible there.
+export const socketToken = (req, res) => {
+  res.json({ token: signAccess(req.user._id) })
+}
 
 // POST /api/auth/refresh — silent token rotation (refresh cookie only sent here)
 export const refresh = async (req, res) => {

@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/((?!.*\\.[a-zA-Z0-9]{2,5}$).*)", "destination": "/index.html" }
+    { "source": "/api/:path*", "destination": "https://netbook-api.onrender.com/api/:path*" },
+    { "source": "/((?!api/|.*\\.[a-zA-Z0-9]{2,5}$).*)", "destination": "/index.html" }
   ]
 }

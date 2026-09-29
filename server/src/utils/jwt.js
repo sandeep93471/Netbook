@@ -16,10 +16,13 @@ export const verifyRefresh = (token) =>
 
 // Shared attributes — clearCookie must send the same secure/sameSite/path
 // the cookie was set with, or the browser silently keeps it (auto re-login bug).
+// sameSite 'lax' everywhere: /api is same-origin (Vite proxy in dev, Vercel
+// rewrite in prod), so first-party 'lax' cookies suffice — stronger CSRF
+// posture than 'none' AND browsers can't drop them as third-party.
 const cookieOpts = {
   httpOnly: true,
   secure: isProd,
-  sameSite: isProd ? 'none' : 'lax', // 'none' needed for cross-origin (Vercel→Render)
+  sameSite: 'lax',
 }
 
 // Sets httpOnly cookies — JS can't read them, XSS can't steal them
