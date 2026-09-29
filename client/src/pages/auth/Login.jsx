@@ -27,6 +27,8 @@ import {
 } from '@mui/icons-material'
 import { loginUser, clearError } from '../../redux/slices/authSlice'
 import GoogleButton from '../../components/auth/GoogleButton'
+import GradientText from '../../components/reactbits/GradientText'
+import BlurText from '../../components/reactbits/BlurText'
 
 // ── Design tokens (reuse on Register / ForgotPassword) ─────────────
 const FIELD_SX = {
@@ -149,22 +151,20 @@ const Login = () => {
         <Box className="relative z-10 flex flex-col justify-center px-12 xl:px-16 w-full animate-fade-in">
           <Box className="flex items-center gap-3">
             <LogoMark />
-            <Typography
-              variant="h2"
-              className="text-white font-bold"
-              sx={{ fontWeight: 800, letterSpacing: '-0.03em' }}
+            <GradientText
+              colors={['#ffffff', '#93c5fd', '#c4b5fd', '#ffffff']}
+              animationSpeed={6}
+              className="text-5xl font-extrabold tracking-tight"
             >
               Netbook
-            </Typography>
+            </GradientText>
           </Box>
 
-          <Typography
-            variant="h3"
-            className="text-white"
-            sx={{ fontWeight: 700, lineHeight: 1.3, mt: '64px' }}
-          >
-            Welcome back to your community
-          </Typography>
+          <BlurText
+            text="Welcome back to your community"
+            delay={90}
+            className="text-white text-4xl font-bold leading-snug mt-16"
+          />
 
           <Typography
             variant="body1"

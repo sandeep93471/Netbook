@@ -6,6 +6,7 @@ import { Toaster } from 'react-hot-toast'
 import App from '../../App'
 import { getTheme } from '../../theme'
 import { selectMode } from '../../redux/slices/uiSlice'
+import ClickSpark from '../reactbits/ClickSpark'
 
 // Reads dark/light mode from Redux, syncs the .dark class for Tailwind
 // dark: variants, and provides the matching MUI theme.
@@ -20,7 +21,9 @@ const ThemedApp = () => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <App />
+      <ClickSpark sparkColor="#1877F2" sparkSize={10} sparkRadius={22} sparkCount={7} duration={450}>
+        <App />
+      </ClickSpark>
       <Toaster position="top-right" />
     </ThemeProvider>
   )

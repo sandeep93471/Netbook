@@ -5,6 +5,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import { useSelector } from 'react-redux'
 import { fetchSuggestedUsers } from '../../api/firestore'
 import FriendButton from '../common/FriendButton'
+import SpotlightCard from '../reactbits/SpotlightCard'
 
 // Skeleton row — matches final layout so there's no content shift
 const SuggestionSkeleton = () => (
@@ -63,7 +64,7 @@ const RightRail = () => {
               </Button>
             </div>
           ) : (
-            <div>
+            <SpotlightCard className="py-1">
               {visible.map((u) => (
                 <div
                   key={u.uid}
@@ -99,7 +100,7 @@ const RightRail = () => {
                 sx={{ textTransform: 'none', justifyContent: 'flex-start', px: 2, mt: 0.5 }}>
                 See all
               </Button>
-            </div>
+            </SpotlightCard>
           )}
 
           {/* Footer links — consistent help location (WCAG 3.2.6) */}
