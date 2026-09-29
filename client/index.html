@@ -26,6 +26,28 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Dead-app failsafe: if React never mounts (e.g. a cached index.html
+      // pointing at chunk files deleted by a newer deploy), reload once for
+      // the fresh build — then show a visible fallback instead of white.
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          var root = document.getElementById('root')
+          if (root && !root.hasChildNodes()) {
+            if (!sessionStorage.getItem('nb-autoreload')) {
+              sessionStorage.setItem('nb-autoreload', '1')
+              location.reload()
+            } else {
+              document.body.innerHTML =
+                '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;text-align:center;padding:24px">' +
+                '<h2 style="margin:0 0 8px">Netbook failed to load</h2>' +
+                '<p style="color:#666;margin:0 0 20px">Please reload the page. If it keeps failing, clear your browser cache.</p>' +
+                '<button onclick="location.reload(true)" style="padding:10px 28px;background:#1877F2;color:#fff;border:0;border-radius:10px;font-size:15px;cursor:pointer">Reload</button></div>'
+            }
+          }
+        }, 8000)
+      })
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
