@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
-import { Paper, Typography, TextField, Button, Avatar, CircularProgress, FormControlLabel, Switch } from '@mui/material'
+import { Paper, Typography, TextField, Button, Avatar, CircularProgress, FormControlLabel, Switch, ListItemButton, ListItemIcon, ListItemText } from '@mui/material'
+import LockResetIcon from '@mui/icons-material/LockReset'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import { updateUserProfile, fetchUserProfile, selectCurrentProfile } from '../../redux/slices/userSlice'
 import { validateProfile } from '../../utils/validation'
 import { showError } from '../../utils/errorHandler'
+import ChangePasswordDialog from '../../components/common/ChangePasswordDialog'
 
 const EditProfile = () => {
   const { user } = useSelector((state) => state.auth)
@@ -20,6 +23,7 @@ const EditProfile = () => {
     currentProfile?.uid === user?.uid ? !!currentProfile?.isPrivate : false
   )
   const [loading, setLoading] = useState(false)
+  const [pwDialog, setPwDialog] = useState(false)
 
   const handleFileChange = (e) => {
     const file = e.target.files[0]
@@ -92,6 +96,23 @@ const EditProfile = () => {
           </div>
         </form>
       </Paper>
+
+      {/* Security — reachable on mobile too (Settings lives in the desktop sidebar) */}
+      <Paper elevation={2} className="p-2 mt-4">
+        <ListItemButton onClick={() => setPwDialog(true)} sx={{ borderRadius: 2 }}>
+          <ListItemIcon sx={{ minWidth: 40 }}>
+            <LockResetIcon sx={{ color: '#0A5CE0' }} />
+          </ListItemIcon>
+          <ListItemText
+            primary="Change password"
+            secondary="Update the password you use to log in"
+            primaryTypographyProps={{ fontWeight: 600, fontSize: 14 }}
+          />
+          <ChevronRightIcon sx={{ color: 'text.disabled' }} />
+        </ListItemButton>
+      </Paper>
+
+      <ChangePasswordDialog open={pwDialog} onClose={() => setPwDialog(false)} />
     </div>
   )
 }

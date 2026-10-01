@@ -58,6 +58,34 @@ export const createHighlight = async (req, res) => {
   res.status(201).json({ highlight: shape(populated) })
 }
 
+// PATCH /api/highlights/:id { name?, storyIds? } — owner only
+export const updateHighlight = async (req, res) => {
+  const h = await Highlight.findById(req.params.id)
+  if (!h) return res.status(404).json({ message: 'Not found' })
+  if (h.user.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ message: 'Not your highlight' })
+  }
+
+  const { name, storyIds } = req.body
+  if (name !== undefined) {
+    if (!name?.trim()) return res.status(400).json({ message: 'Name is required' })
+    h.name = name.trim()
+  }
+  if (storyIds !== undefined) {
+    if (!storyIds.length) return res.status(400).json({ message: 'Pick at least one story' })
+    const stories = await Story.find({ _id: { $in: storyIds }, user: req.user._id }).lean()
+    const ordered = storyIds.filter((id) => stories.some((s) => s._id.toString() === id))
+    if (!ordered.length) return res.status(400).json({ message: 'No valid stories selected' })
+    h.items = ordered
+    // cover follows the new first item, same rule as create
+    h.coverImage = stories.find((s) => s._id.toString() === ordered[0])?.imageURL || h.coverImage
+  }
+
+  await h.save()
+  const populated = await h.populate('items', 'imageURL createdAt closeFriendsOnly')
+  res.json({ highlight: shape(populated) })
+}
+
 // DELETE /api/highlights/:id — owner only (stories themselves are kept)
 export const deleteHighlight = async (req, res) => {
   const h = await Highlight.findById(req.params.id)

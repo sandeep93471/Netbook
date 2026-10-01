@@ -6,6 +6,9 @@ export const getUserHighlights = (userId) =>
 export const createHighlight = (name, storyIds) =>
   api.post('/highlights', { name, storyIds }).then((r) => r.data.highlight)
 
+export const updateHighlight = (id, name, storyIds) =>
+  api.patch(`/highlights/${id}`, { name, storyIds }).then((r) => r.data.highlight)
+
 export const deleteHighlight = (id) =>
   api.delete(`/highlights/${id}`)
 

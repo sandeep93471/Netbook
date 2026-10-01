@@ -16,10 +16,13 @@ import StarIcon from '@mui/icons-material/Star'
 import StarBorderIcon from '@mui/icons-material/StarBorder'
 import SearchIcon from '@mui/icons-material/Search'
 import CloseIcon from '@mui/icons-material/Close'
+import LockResetIcon from '@mui/icons-material/LockReset'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import { useSelector, useDispatch } from 'react-redux'
 import { fetchUserProfile, selectUserById } from '../../redux/slices/userSlice'
 import { fetchFriendRequests } from '../../redux/slices/friendSlice'
 import { toggleMode, selectMode } from '../../redux/slices/uiSlice'
+import ChangePasswordDialog from '../common/ChangePasswordDialog'
 import api from '../../api/client'
 
 // Icon colors chosen for ≥3:1 contrast on white (spec §4.1)
@@ -43,6 +46,7 @@ const Sidebar = () => {
   const [cfDialog, setCfDialog] = useState(false)
   const [friendUsers, setFriendUsers] = useState([])
   const [cfSearch, setCfSearch] = useState('')
+  const [pwDialog, setPwDialog] = useState(false)
 
   const closeFriends = myProfile?.closeFriends || []
 
@@ -63,6 +67,8 @@ const Sidebar = () => {
     const { data } = await api.put(`/users/me/close-friends/${fid}`).catch(() => ({}))
     if (data) dispatch(fetchUserProfile(user.uid))
   }
+
+  const openPwDialog = () => setPwDialog(true)
 
   useEffect(() => {
     if (user?.uid && !myProfile) dispatch(fetchUserProfile(user.uid))
@@ -173,8 +179,25 @@ const Sidebar = () => {
               Edit
             </Button>
           </ListItemButton>
+
+          <Divider sx={{ my: 2 }} />
+          {/* Security — password change */}
+          <ListItemButton onClick={openPwDialog} sx={{ borderRadius: 2, px: 1 }}>
+            <ListItemIcon sx={{ minWidth: 36 }}>
+              <LockResetIcon sx={{ color: '#0A5CE0' }} />
+            </ListItemIcon>
+            <ListItemText
+              primary="Change password"
+              secondary="Update the password you use to log in"
+              primaryTypographyProps={{ fontWeight: 600, fontSize: 14 }}
+            />
+            <ChevronRightIcon sx={{ color: 'text.disabled' }} />
+          </ListItemButton>
         </DialogContent>
       </Dialog>
+
+      {/* Change password — shared dialog (also on Edit Profile for mobile) */}
+      <ChangePasswordDialog open={pwDialog} onClose={() => setPwDialog(false)} />
 
       {/* Close friends editor — add/remove anyone, anytime */}
       <Dialog open={cfDialog} onClose={() => setCfDialog(false)} fullWidth maxWidth="xs">

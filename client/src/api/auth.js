@@ -40,5 +40,9 @@ export const confirmReset = (email, code, password) =>
 export const sendVerifyCode = () => api.post('/auth/send-verify-code')
 export const verifyEmail = (code) => api.post('/auth/verify-email', { code })
 
+// Logged-in password change — needs the current password, unlike /reset
+export const changePassword = (currentPassword, newPassword) =>
+  api.post('/auth/change-password', { currentPassword, newPassword })
+
 // Kept for AppLayout compatibility — MERN uses a 6-digit code, not a link
 export const resendVerificationEmail = () => api.post('/auth/send-verify-code')

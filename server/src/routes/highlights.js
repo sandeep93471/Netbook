@@ -7,6 +7,7 @@ router.use(protect)
 
 router.get('/user/:userId', c.getUserHighlights)
 router.post('/', c.createHighlight)
+router.patch('/:id', c.updateHighlight)
 router.delete('/:id', c.deleteHighlight)
 
 export default router

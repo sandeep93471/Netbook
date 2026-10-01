@@ -38,4 +38,9 @@ router.post('/reset', codeLimiter, [
   body('password').isLength({ min: 8 }),
 ], validate, c.resetPassword)
 
+router.post('/change-password', protect, authLimiter, [
+  body('currentPassword').notEmpty().withMessage('Current password required'),
+  body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters'),
+], validate, c.changePassword)
+
 export default router

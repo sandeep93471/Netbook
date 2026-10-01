@@ -184,3 +184,19 @@ export const resetPassword = async (req, res) => {
   await user.save()
   res.json({ message: 'Password updated' })
 }
+
+// POST /api/auth/change-password { currentPassword, newPassword } — logged in
+export const changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body
+  // req.user has passwordHash stripped by the protect middleware — re-fetch
+  const user = await User.findById(req.user._id)
+  if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+    return res.status(400).json({ message: 'Current password is incorrect' })
+  }
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ message: 'New password must be different' })
+  }
+  user.passwordHash = await bcrypt.hash(newPassword, 10)
+  await user.save()
+  res.json({ message: 'Password updated' })
+}

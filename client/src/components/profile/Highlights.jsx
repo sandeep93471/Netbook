@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, IconButton, Typography, CircularProgress, Tooltip } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import CloseIcon from '@mui/icons-material/Close'
-import { getUserHighlights, createHighlight, deleteHighlight, getStoryArchive } from '../../api/highlights'
+import EditIcon from '@mui/icons-material/Edit'
+import { getUserHighlights, createHighlight, updateHighlight, deleteHighlight, getStoryArchive } from '../../api/highlights'
 import { StoryViewer } from '../post/StoryBar'
 import { showError, showSuccess } from '../../utils/errorHandler'
 import { timeAgo } from '../../utils/timeAgo'
@@ -10,33 +11,49 @@ import { timeAgo } from '../../utils/timeAgo'
 // Instagram-style story Highlights — named story collections on the profile.
 const Highlights = ({ userId, isOwnProfile, displayName, photoURL }) => {
   const [highlights, setHighlights] = useState(null)
-  const [createOpen, setCreateOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [editing, setEditing] = useState(null) // highlight being edited, null = create mode
   const [archive, setArchive] = useState(null)
   const [picked, setPicked] = useState([])
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(null) // highlight pending delete
+  const [deleting, setDeleting] = useState(false)
   const [viewing, setViewing] = useState(null) // highlight being viewed
 
   const load = () => getUserHighlights(userId).then(setHighlights).catch(() => setHighlights([]))
   useEffect(() => { load() }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openCreate = () => {
-    setCreateOpen(true)
+  const openPicker = (h = null) => {
+    setEditing(h)
+    setName(h?.name || '')
+    setPicked(h ? h.items.map((i) => i.id) : [])
+    setPickerOpen(true)
     if (archive === null) getStoryArchive().then(setArchive).catch(() => setArchive([]))
+  }
+
+  const closePicker = () => {
+    setPickerOpen(false)
+    setEditing(null)
+    setPicked([])
+    setName('')
   }
 
   const togglePick = (id) =>
     setPicked((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id])
 
-  const create = async () => {
+  const save = async () => {
     if (!name.trim() || !picked.length) return
     setSaving(true)
     try {
-      await createHighlight(name.trim(), picked)
-      showSuccess('Highlight created')
-      setCreateOpen(false)
-      setPicked([])
-      setName('')
+      if (editing) {
+        await updateHighlight(editing.id, name.trim(), picked)
+        showSuccess('Highlight updated')
+      } else {
+        await createHighlight(name.trim(), picked)
+        showSuccess('Highlight created')
+      }
+      closePicker()
       load()
     } catch (err) {
       showError(err)
@@ -45,11 +62,24 @@ const Highlights = ({ userId, isOwnProfile, displayName, photoURL }) => {
     }
   }
 
-  const remove = async (e, id) => {
+  const askRemove = (e, h) => {
     e.stopPropagation()
-    await deleteHighlight(id).catch((err) => showError(err))
-    showSuccess('Highlight removed')
-    load()
+    setConfirmDelete(h)
+  }
+
+  const remove = async () => {
+    if (!confirmDelete) return
+    setDeleting(true)
+    try {
+      await deleteHighlight(confirmDelete.id)
+      showSuccess('Highlight removed')
+      setConfirmDelete(null)
+      load()
+    } catch (err) {
+      showError(err)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   if (highlights === null) return null
@@ -62,7 +92,7 @@ const Highlights = ({ userId, isOwnProfile, displayName, photoURL }) => {
           {/* New highlight — own profile only */}
           {isOwnProfile && (
             <button
-              onClick={openCreate}
+              onClick={() => openPicker()}
               className="flex flex-col items-center gap-1.5 shrink-0 group"
               aria-label="Create highlight"
             >
@@ -83,30 +113,45 @@ const Highlights = ({ userId, isOwnProfile, displayName, photoURL }) => {
                 <img src={h.coverImage} alt={h.name} className="w-full h-full object-cover" />
               </button>
               <Typography variant="caption" className="max-w-16 truncate">{h.name}</Typography>
-              {/* Delete — own highlights, hover reveal */}
+              {/* Edit / delete — own highlights, hover reveal */}
               {isOwnProfile && (
-                <IconButton
-                  size="small"
-                  onClick={(e) => remove(e, h.id)}
-                  aria-label={`Delete highlight ${h.name}`}
-                  sx={{
-                    position: 'absolute', top: -4, right: 2, width: 20, height: 20,
-                    bgcolor: 'background.paper', boxShadow: 1, opacity: 0,
-                    '.group:hover &': { opacity: 1 },
-                    '&:hover': { bgcolor: 'error.light', color: '#fff' },
-                  }}
-                >
-                  <CloseIcon sx={{ fontSize: 12 }} />
-                </IconButton>
+                <>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); openPicker(h) }}
+                    aria-label={`Edit highlight ${h.name}`}
+                    sx={{
+                      position: 'absolute', top: -4, left: 2, width: 20, height: 20,
+                      bgcolor: 'background.paper', boxShadow: 1, opacity: 0,
+                      '.group:hover &': { opacity: 1 },
+                      '&:hover': { bgcolor: 'primary.main', color: '#fff' },
+                    }}
+                  >
+                    <EditIcon sx={{ fontSize: 12 }} />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => askRemove(e, h)}
+                    aria-label={`Delete highlight ${h.name}`}
+                    sx={{
+                      position: 'absolute', top: -4, right: 2, width: 20, height: 20,
+                      bgcolor: 'background.paper', boxShadow: 1, opacity: 0,
+                      '.group:hover &': { opacity: 1 },
+                      '&:hover': { bgcolor: 'error.light', color: '#fff' },
+                    }}
+                  >
+                    <CloseIcon sx={{ fontSize: 12 }} />
+                  </IconButton>
+                </>
               )}
             </div>
           ))}
         </div>
       </div>
 
-      {/* Create dialog — name + pick stories from archive */}
-      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>New highlight</DialogTitle>
+      {/* Create/edit dialog — name + pick stories from archive */}
+      <Dialog open={pickerOpen} onClose={closePicker} maxWidth="xs" fullWidth>
+        <DialogTitle>{editing ? 'Edit highlight' : 'New highlight'}</DialogTitle>
         <DialogContent>
           <TextField
             fullWidth size="small" label="Highlight name"
@@ -152,10 +197,26 @@ const Highlights = ({ userId, isOwnProfile, displayName, photoURL }) => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={create}
+          <Button onClick={closePicker}>Cancel</Button>
+          <Button variant="contained" onClick={save}
             disabled={saving || !name.trim() || !picked.length}>
-            {saving ? 'Saving...' : 'Create'}
+            {saving ? 'Saving...' : editing ? 'Save' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete confirmation — stories stay saved in the archive */}
+      <Dialog open={!!confirmDelete} onClose={() => !deleting && setConfirmDelete(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete highlight?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            "{confirmDelete?.name}" will be removed from your profile. Your stories won't be deleted.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDelete(null)} disabled={deleting}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={remove} disabled={deleting}>
+            {deleting ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
