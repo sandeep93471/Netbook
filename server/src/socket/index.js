@@ -2,6 +2,7 @@ import { Server } from 'socket.io'
 import cookie from 'cookie'
 import { verifyAccess } from '../utils/jwt.js'
 import User from '../models/User.js'
+import { socketsConnected } from '../utils/metrics.js'
 
 let io = null
 const online = new Map() // userId → socket.id
@@ -38,6 +39,7 @@ export const initSocket = (httpServer) => {
   io.on('connection', async (socket) => {
     const uid = socket.userId
     online.set(uid, socket.id)
+    socketsConnected.set(online.size)
     socket.join(`user:${uid}`)
     io.emit('presence:online', { userId: uid }) // broadcast to everyone
 
@@ -58,6 +60,7 @@ export const initSocket = (httpServer) => {
 
     socket.on('disconnect', async () => {
       online.delete(uid)
+      socketsConnected.set(online.size)
       const lastSeen = Date.now()
       io.emit('presence:offline', { userId: uid, lastSeen })
       User.findByIdAndUpdate(uid, { lastSeen }).catch(() => {})

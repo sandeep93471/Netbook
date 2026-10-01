@@ -16,3 +16,10 @@ vi.mock('@react-oauth/google', () => ({
   GoogleOAuthProvider: ({ children }) => children,
   useGoogleLogin: () => vi.fn(),
 }))
+
+// jsdom has no IntersectionObserver — BlurText/animated components need a stub
+globalThis.IntersectionObserver ||= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}

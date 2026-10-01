@@ -55,6 +55,7 @@ const Explore = () => {
   const [results, setResults] = useState([])
   const [postResults, setPostResults] = useState(null)
   const [tab, setTab] = useState(0) // 0 = top (grid), 1 = people, 2 = posts
+  const [semantic, setSemantic] = useState(false) // AI meaning-search for posts
   const [loading, setLoading] = useState(false)
   const [gridPosts, setGridPosts] = useState(null)
   const [mediaFilter, setMediaFilter] = useState('all') // all | photos | videos
@@ -95,14 +96,20 @@ const Explore = () => {
     return () => { active = false }
   }, [debouncedTerm])
 
-  // Post search — word match on searchTerms
+  // Post search — keyword match, or AI semantic match when the chip is on
   useEffect(() => {
     const term = debouncedTerm.trim()
     if (!term || tab !== 2) return
-    dispatch(searchPosts(term)).then((res) => {
-      if (res.payload) setPostResults({ term, posts: res.payload })
-    })
-  }, [debouncedTerm, tab, dispatch])
+    if (semantic) {
+      api.get('/posts/semantic', { params: { q: term } })
+        .then((r) => setPostResults({ term, posts: r.data.posts }))
+        .catch(() => setPostResults({ term, posts: [] }))
+    } else {
+      dispatch(searchPosts(term)).then((res) => {
+        if (res.payload) setPostResults({ term, posts: res.payload })
+      })
+    }
+  }, [debouncedTerm, tab, dispatch, semantic])
 
   const searching = Boolean(debouncedTerm.trim())
   const filteredGrid = (gridPosts || []).filter((p) =>
@@ -137,10 +144,22 @@ const Explore = () => {
       />
 
       {searching && (
-        <Tabs value={tab === 0 ? 1 : tab} onChange={(_, v) => setTab(v)} className="mb-4" aria-label="Search filters">
-          <Tab label="People" value={1} />
-          <Tab label="Posts" value={2} />
-        </Tabs>
+        <div className="flex items-center gap-2 mb-4">
+          <Tabs value={tab === 0 ? 1 : tab} onChange={(_, v) => setTab(v)} aria-label="Search filters" sx={{ flex: 1 }}>
+            <Tab label="People" value={1} />
+            <Tab label="Posts" value={2} />
+          </Tabs>
+          {tab === 2 && (
+            <Chip
+              label="AI"
+              size="small"
+              color={semantic ? 'primary' : 'default'}
+              variant={semantic ? 'filled' : 'outlined'}
+              onClick={() => setSemantic((s) => !s)}
+              title="Semantic search — matches meaning, not just keywords"
+            />
+          )}
+        </div>
       )}
 
       {/* Recent searches — shown when the box is empty */}

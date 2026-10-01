@@ -8,6 +8,11 @@ services:
       - mongo-data:/data/db
     # No ports published — only reachable inside the compose network
 
+  redis:
+    image: redis:7-alpine
+    # Cache layer for feed pools/search — optional; the server falls back to
+    # an in-process cache if it's unreachable
+
   server:
     build: ./server
     environment:
@@ -20,8 +25,13 @@ services:
       EMAIL_USER: ${EMAIL_USER}
       EMAIL_PASS: ${EMAIL_PASS}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      REDIS_URL: redis://redis:6379
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
     depends_on:
       - mongo
+      - redis
     # No port published — nginx proxies to it, single entry point
 
   client:

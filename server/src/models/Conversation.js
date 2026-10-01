@@ -12,6 +12,7 @@ const conversationSchema = new mongoose.Schema({
   },
   participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   participantInfo: { type: Map, of: { displayName: String, photoURL: String }, default: {} },
+  e2ee: { type: Boolean, default: false }, // end-to-end encrypted DM (AES-GCM, server stores ciphertext only)
   lastMessage: { type: String, default: '' },
   lastSenderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   lastMessageAt: { type: Number, default: Date.now },

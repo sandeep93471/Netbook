@@ -9,11 +9,18 @@ export const getOrCreateConversation = async (_uid1, uid2) => {
   return data.conversationId
 }
 
-export const sendMessage = async (conversationId, _senderId, text) => {
-  const { data } = await api.post(`/chat/conversations/${conversationId}/messages`, { text })
+// enc = {v,iv,ct} for E2EE rooms — the server never sees plaintext there
+export const sendMessage = async (conversationId, _senderId, text, enc = null) => {
+  const { data } = await api.post(
+    `/chat/conversations/${conversationId}/messages`,
+    enc ? { enc } : { text },
+  )
   getSocket().emit('message:send', { conversationId, message: data.message })
   return data.message
 }
+
+export const enableEncryption = (conversationId) =>
+  api.put(`/chat/conversations/${conversationId}/e2ee`)
 
 export const createGroupConversation = async (name, _creatorId, memberIds) => {
   const { data } = await api.post('/chat/groups', { name, memberIds })

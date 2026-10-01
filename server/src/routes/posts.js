@@ -9,6 +9,7 @@ router.use(protect)
 
 router.get('/', c.getFeed)
 router.get('/search', c.searchPosts)
+router.get('/semantic', c.searchPostsSemantic)
 router.post('/batch', c.postsByIds)
 router.get('/reels', c.getReels)
 router.get('/explore', c.getExplore)

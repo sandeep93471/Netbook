@@ -1,7 +1,6 @@
 import Comment from '../models/Comment.js'
 import Post from '../models/Post.js'
-import Notification from '../models/Notification.js'
-import { emitToUser } from '../socket/index.js'
+import { notify } from '../utils/notify.js'
 
 const shapeComment = (c) => ({ ...c.toObject(), id: c._id, userId: c.user?.toString() })
 
@@ -33,12 +32,11 @@ export const addComment = async (req, res) => {
   }
   targets.delete(req.user._id.toString())
   await Promise.all([...targets].map((uid) =>
-    Notification.create({
-      recipient: uid, sender: req.user._id,
-      senderName: req.user.displayName, senderPhoto: req.user.photoURL,
+    notify({
+      recipientId: uid, sender: req.user,
       type: parentCommentId ? 'reply' : 'comment',
-      postId: post._id, postText: post.text?.slice(0, 80),
-    }).then((n) => emitToUser(uid, 'notification:new', n))
+      postId: post._id, postText: post.text,
+    })
   ))
 
   res.status(201).json({ comment: shapeComment(comment) })

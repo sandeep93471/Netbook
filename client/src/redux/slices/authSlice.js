@@ -55,6 +55,10 @@ export const logoutUser = createAsyncThunk(
     closeSocket()
     try {
       await logout()
+      // Detach this device's push subscription so it stops receiving
+      // notifications for the signed-out account
+      const { removePushSubscription } = await import('../../api/messaging')
+      await removePushSubscription()
     } catch { /* cookie may already be gone — fine */ }
   }
 )

@@ -1,7 +1,8 @@
 import Conversation from '../models/Conversation.js'
 import Message from '../models/Message.js'
 import User from '../models/User.js'
-import { emitToConversation, emitToUser } from '../socket/index.js'
+import { emitToConversation, emitToUser, isOnline } from '../socket/index.js'
+import { sendPushToUser } from '../utils/push.js'
 
 const shapeConvo = (c) => ({ ...c.toObject({ flattenMaps: true }), id: c._id })
 const shapeMsg = (m) => ({ ...m.toObject({ flattenMaps: true }), id: m._id, senderId: m.sender?.toString() })
@@ -166,6 +167,28 @@ export const removeMember = async (req, res) => {
   res.json({ conversation: shapeConvo(convo) })
 }
 
+// PUT /api/chat/conversations/:id/e2ee — enable end-to-end encryption on a DM.
+// One-way switch (can't downgrade an encrypted room to plaintext); members
+// still see ciphertext rendered if their keys are missing.
+export const enableE2ee = async (req, res) => {
+  const convo = await Conversation.findById(req.params.id)
+  if (!convo) return res.status(404).json({ message: 'Not found' })
+  if (convo.isGroup) return res.status(400).json({ message: 'E2EE is DM-only for now' })
+  if (!convo.participants.some((p) => p.toString() === req.user._id.toString())) {
+    return res.status(403).json({ message: 'Not a participant' })
+  }
+  // Both sides must have published a key or their client can't decrypt
+  const peerId = convo.participants.find((p) => p.toString() !== req.user._id.toString())
+  const peer = await User.findById(peerId).select('e2eePublicKey')
+  if (!req.user.e2eePublicKey || !peer?.e2eePublicKey) {
+    return res.status(409).json({ message: 'Both people need encryption keys — ask them to open Netbook once' })
+  }
+  convo.e2ee = true
+  await convo.save()
+  emitToConversation(convo._id, 'conversation:updated', shapeConvo(convo))
+  res.json({ conversation: shapeConvo(convo) })
+}
+
 // GET /api/chat/conversations/:id/messages
 export const getMessages = async (req, res) => {
   const convo = await Conversation.findById(req.params.id)
@@ -176,7 +199,8 @@ export const getMessages = async (req, res) => {
   res.json({ messages: messages.map((m) => ({ ...m, id: m._id, senderId: m.sender?.toString(), createdAt: new Date(m.createdAt).getTime() })) })
 }
 
-// POST /api/chat/conversations/:id/messages — persist + emit to room
+// POST /api/chat/conversations/:id/messages — persist + emit to room.
+// In e2ee rooms the body is { enc: { v, iv, ct } } — ciphertext only.
 export const sendMessage = async (req, res) => {
   const convo = await Conversation.findById(req.params.id)
   if (!convo?.participants.some((p) => p.toString() === req.user._id.toString())) {
@@ -188,10 +212,22 @@ export const sendMessage = async (req, res) => {
       && !convo.admins.some((a) => a.toString() === uid)) {
     return res.status(403).json({ message: 'Only admins can send messages in this group' })
   }
+
+  const enc = req.body.enc
+  if (convo.e2ee) {
+    if (!enc?.iv || !enc?.ct || typeof enc.ct !== 'string' || enc.ct.length > 8000) {
+      return res.status(400).json({ message: 'Encrypted conversation — ciphertext required' })
+    }
+  } else if (!req.body.text?.trim()) {
+    return res.status(400).json({ message: 'Message text required' })
+  }
+
   const message = await Message.create({
-    conversation: convo._id, sender: req.user._id, text: req.body.text,
+    conversation: convo._id, sender: req.user._id,
+    text: convo.e2ee ? '' : req.body.text,
+    enc: convo.e2ee ? { v: 1, iv: enc.iv, ct: enc.ct } : null,
   })
-  convo.lastMessage = req.body.text
+  convo.lastMessage = convo.e2ee ? '🔒 Encrypted message' : req.body.text
   convo.lastSenderId = req.user._id
   convo.lastMessageAt = Date.now()
   convo.participants.forEach((p) => {
@@ -202,8 +238,20 @@ export const sendMessage = async (req, res) => {
 
   const shaped = { ...message.toObject({ flattenMaps: true }), id: message._id, senderId: uid, createdAt: message.createdAt.getTime() }
   emitToConversation(convo._id, 'message:new', shaped)
-  // Sidebar refresh for members not in the room
-  convo.participants.forEach((p) => emitToUser(p.toString(), 'conversation:activity', { id: convo._id }))
+  // Sidebar refresh for members not in the room + push for offline users.
+  // Push body stays generic — never leak message text into a notification.
+  convo.participants.forEach((p) => {
+    const pid = p.toString()
+    if (pid === uid) return
+    emitToUser(pid, 'conversation:activity', { id: convo._id })
+    if (!isOnline(pid)) {
+      sendPushToUser(pid, {
+        title: req.user.displayName,
+        body: convo.e2ee ? 'Sent you an encrypted message' : 'Sent you a message',
+        url: '/chat', tag: `netbook-msg-${convo._id}`,
+      }).catch(() => {})
+    }
+  })
   res.status(201).json({ message: shaped })
 }
 

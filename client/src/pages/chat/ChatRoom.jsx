@@ -10,6 +10,8 @@ import MoreVertIcon from '@mui/icons-material/MoreVert'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteForeverOutlined'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import GroupAddIcon from '@mui/icons-material/GroupAdd'
+import LockIcon from '@mui/icons-material/Lock'
+import LockOpenIcon from '@mui/icons-material/LockOpen'
 import SettingsIcon from '@mui/icons-material/Settings'
 import GroupsIcon from '@mui/icons-material/Groups'
 import PersonAddAltIcon from '@mui/icons-material/PersonAddAlt'
@@ -23,8 +25,9 @@ import {
   sendMessage, subscribeToMessages,
   subscribeToConversations, markConversationRead,
   createGroupConversation, updateConversation, addGroupMember, removeGroupMember,
-  addGroupAdmin, removeGroupAdmin, unsendMessage, reactToMessage,
+  addGroupAdmin, removeGroupAdmin, unsendMessage, reactToMessage, enableEncryption,
 } from '../../api/chat'
+import { ensureMyKeys, getConvoKey, encryptText, decryptText, e2eeSupported } from '../../api/e2ee'
 import {
   setConversations, setActiveConversation, setMessages,
   addMessage, replaceTempMessage, removeMessage,
@@ -50,6 +53,18 @@ const textOn = (bg) => (relLum(bg) > 0.35 ? '#050505' : '#ffffff')
 
 // Resolve a display name for any participant id
 const nameOf = (convo, uid) => convo?.participantInfo?.[uid]?.displayName || 'User'
+
+// Module scope so the event-handler purity rule doesn't see Date.now inside
+// the component — this only ever runs on Send click.
+const addOptimistic = (dispatch, { conversationId, uid, text }) => {
+  const tempId = `temp-${Date.now()}`
+  dispatch(addMessage({
+    id: tempId, conversation: conversationId,
+    senderId: uid, text, createdAt: Date.now(),
+    read: [], pending: true,
+  }))
+  return tempId
+}
 
 // "Today" / "Yesterday" / "12 Mar" style divider labels
 const dayLabel = (ts) => {
@@ -91,6 +106,8 @@ const ChatRoom = () => {
   const [addMemberId, setAddMemberId] = useState('')
   const [msgMenu, setMsgMenu] = useState(null) // { anchor, msg, mine }
   const [memberMenu, setMemberMenu] = useState(null) // { anchor, uid }
+  const [plaintext, setPlaintext] = useState({}) // msgId → decrypted text (e2ee)
+  const convoKeyRef = useRef(null) // AES key for the active encrypted convo
 
   const QUICK_EMOJIS = ['❤️', '😂', '👍', '😮', '😢', '🙏']
   const openMsgMenu = (e, msg) => {
@@ -118,6 +135,7 @@ const ChatRoom = () => {
     const unsub = subscribeToConversations(user.uid, (convos) => {
       dispatch(setConversations(convos))
     })
+    ensureMyKeys(user.uid) // publishes my E2EE public key once per device
     return unsub
   }, [user?.uid, dispatch])
 
@@ -130,6 +148,28 @@ const ChatRoom = () => {
     markConversationRead(activeConversation, user.uid).catch(() => {})
     return unsub
   }, [activeConversation, user?.uid, dispatch])
+
+  // E2EE — derive the shared AES key once per convo, then decrypt any
+  // ciphertext messages we haven't cracked yet. Plaintext lives only in
+  // this component's memory; the DB and the wire only ever saw ciphertext.
+  useEffect(() => {
+    const convo = conversations.find((c) => c.id === activeConversation)
+    convoKeyRef.current = convo?.e2ee ? convoKeyRef.current : null
+    if (!convo?.e2ee || convo.isGroup || !user?.uid) return
+    const peer = convo.participants.find((p) => p !== user.uid)
+    let cancelled = false
+    ;(async () => {
+      const key = await getConvoKey(convo.id, peer)
+      if (!key || cancelled) return
+      convoKeyRef.current = key
+      const pending = messages.filter((m) => m.enc && plaintext[m.id] === undefined)
+      if (!pending.length) return
+      const out = {}
+      for (const m of pending) out[m.id] = await decryptText(key, m.enc)
+      if (!cancelled) setPlaintext((p) => ({ ...p, ...out }))
+    })()
+    return () => { cancelled = true }
+  }, [messages, activeConversation, conversations, user?.uid]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -168,19 +208,40 @@ const ChatRoom = () => {
     setTyping(activeConversation, user.uid, false).catch(() => {})
     // Optimistic — bubble renders instantly, server confirms in background
     const trimmed = text.trim()
-    const tempId = `temp-${Date.now()}`
-    dispatch(addMessage({
-      id: tempId, conversation: activeConversation,
-      senderId: user.uid, text: trimmed, createdAt: Date.now(),
-      read: [], pending: true,
-    }))
+    const tempId = addOptimistic(dispatch, {
+      conversationId: activeConversation, uid: user.uid, text: trimmed,
+    })
     setText('')
-    sendMessage(activeConversation, user.uid, trimmed)
+    // E2EE rooms encrypt before the wire — server only ever stores ciphertext
+    let enc = null
+    if (activeConvo?.e2ee) {
+      try {
+        const key = convoKeyRef.current
+          || await getConvoKey(activeConversation, getOtherParticipant(activeConvo))
+        if (!key) throw new Error('no key')
+        convoKeyRef.current = key
+        enc = await encryptText(key, trimmed)
+      } catch {
+        dispatch(removeMessage(tempId))
+        showError({ message: 'Encryption key unavailable — both sides must open Netbook once' })
+        return
+      }
+    }
+    sendMessage(activeConversation, user.uid, trimmed, enc)
       .then((m) => dispatch(replaceTempMessage({ tempId, message: m })))
       .catch(() => {
         dispatch(removeMessage(tempId))
         showError({ message: 'Message failed to send' })
       })
+  }
+
+  const handleEnableE2ee = async () => {
+    try {
+      await enableEncryption(activeConversation)
+      showSuccess('End-to-end encryption on — only you two can read new messages')
+    } catch (err) {
+      showError({ message: err.response?.data?.message || 'Could not enable encryption' })
+    }
   }
 
   const handleCreateGroup = async () => {
@@ -216,6 +277,10 @@ const ChatRoom = () => {
   const otherStatus = useUserStatus(display?.otherId)
 
   const typingNames = typingUsers.map((id) => nameOf(activeConvo, id)).join(', ')
+
+  // Bubble text — ciphertext messages resolve through the decrypt map
+  const textOf = (msg) =>
+    msg.enc ? (plaintext[msg.id] ?? '🔒 Encrypted message') : msg.text
 
   return (
     <div className="flex gap-4 h-[calc(100dvh-96px)] w-full">
@@ -515,6 +580,20 @@ const ChatRoom = () => {
                         : 'Offline'}
                 </Typography>
               </div>
+              {/* E2EE toggle — DMs only, one-way switch */}
+              {!display.isGroup && e2eeSupported() && (
+                activeConvo.e2ee ? (
+                  <Tooltip title="End-to-end encrypted — the server only stores ciphertext">
+                    <LockIcon fontSize="small" sx={{ color: 'success.main', mr: 0.5 }} />
+                  </Tooltip>
+                ) : (
+                  <Tooltip title="Enable end-to-end encryption">
+                    <IconButton size="small" aria-label="Enable encryption" onClick={handleEnableE2ee}>
+                      <LockOpenIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )
+              )}
               <IconButton size="small" aria-label="Chat settings"
                 onClick={() => { setRenameValue(activeConvo.name || ''); setSettingsOpen(true) }}>
                 <SettingsIcon fontSize="small" />
@@ -570,7 +649,7 @@ const ChatRoom = () => {
                           onContextMenu={(e) => openMsgMenu(e, msg)}
                           onDoubleClick={() => reactToMessage(msg.id, '❤️').catch(() => {})}
                         >
-                          <Typography variant="body2" className="whitespace-pre-wrap break-words">{msg.text}</Typography>
+                          <Typography variant="body2" className="whitespace-pre-wrap break-words" sx={msg.enc && plaintext[msg.id] === undefined ? { fontStyle: 'italic', opacity: 0.8 } : undefined}>{textOf(msg)}</Typography>
                           <Typography variant="caption" className={`block text-right mt-0.5 text-[10px] ${
                             mine ? (textOn(theme) === '#ffffff' ? 'text-white/70' : 'text-black/60') : 'text-gray-400'
                           }`}>

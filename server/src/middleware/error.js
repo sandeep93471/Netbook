@@ -11,7 +11,9 @@ export const validate = (req, res, next) => {
 
 // Catch-all error handler — registered last in app.js
 export const errorHandler = (err, req, res, next) => {
-  console.error(err)
+  // req.log carries the pino-http request id — the stack trace stays
+  // correlatable to the request line in the logs
+  ;(req.log || console).error({ err }, 'unhandled error')
   const status = res.statusCode === 200 ? 500 : res.statusCode
   res.status(status).json({ message: err.message || 'Server error' })
 }

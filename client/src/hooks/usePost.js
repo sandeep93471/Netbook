@@ -1,5 +1,5 @@
 import { useSelector } from 'react-redux'
-import { selectPostById, selectAllPosts, selectPostsLoading, selectHasMore } from '../redux/slices/postSlice'
+import { selectPostById, selectFeedPosts, selectPostsLoading, selectHasMore } from '../redux/slices/postSlice'
 
 export const usePost = (postId) => {
   const post = useSelector((state) => selectPostById(state, postId))
@@ -8,7 +8,7 @@ export const usePost = (postId) => {
 }
 
 export const usePosts = () => {
-  const posts = useSelector(selectAllPosts)
+  const posts = useSelector(selectFeedPosts) // server-ranked order
   const loading = useSelector(selectPostsLoading)
   const hasMore = useSelector(selectHasMore)
   return { posts, loading, hasMore }

@@ -1,4 +1,4 @@
-import { createSlice, createAsyncThunk, createEntityAdapter } from '@reduxjs/toolkit'
+import { createSlice, createAsyncThunk, createEntityAdapter, createSelector } from '@reduxjs/toolkit'
 import api, { apiError } from '../../api/client'
 import { uploadImage, uploadVideo } from '../../api/storage'
 import { addComment, deleteComment } from './commentSlice'
@@ -11,8 +11,10 @@ const postsAdapter = createEntityAdapter({
 const initialState = postsAdapter.getInitialState({
   loading: false,
   error: null,
-  cursor: null,  // createdAt cursor for pagination
+  cursor: null,  // opaque server cursor ("r:<offset>:<bucket>" or "t:<ms>")
   hasMore: true,
+  feedIds: [], // server-ranked order — the entity adapter sorts by createdAt
+               // which would silently undo ranking, so the feed renders this
 })
 
 // Create a new post — image uploads to Cloudinary first, server parses tags/mentions
@@ -188,9 +190,13 @@ const postSlice = createSlice({
       postsAdapter.removeAll(state)
       state.cursor = null
       state.hasMore = true
+      state.feedIds = []
     },
     addRealtimePost: (state, action) => {
       postsAdapter.upsertOne(state, action.payload)
+      if (action.payload?.id && !state.feedIds.includes(action.payload.id)) {
+        state.feedIds.unshift(action.payload.id)
+      }
     },
     likePostOptimistic: (state, action) => {
       const { postId, userId } = action.payload
@@ -220,6 +226,9 @@ const postSlice = createSlice({
       .addCase(createPost.fulfilled, (state, action) => {
         state.loading = false
         postsAdapter.addOne(state, action.payload)
+        if (action.payload?.id && !state.feedIds.includes(action.payload.id)) {
+          state.feedIds.unshift(action.payload.id)
+        }
       })
       .addCase(createPost.rejected, (state, action) => {
         state.loading = false
@@ -229,6 +238,11 @@ const postSlice = createSlice({
       .addCase(fetchPosts.fulfilled, (state, action) => {
         state.loading = false
         postsAdapter.upsertMany(state, action.payload.posts)
+        // Append in server order — the feed is ranked, not chronological
+        const seen = new Set(state.feedIds)
+        for (const p of action.payload.posts) {
+          if (!seen.has(p.id)) { state.feedIds.push(p.id); seen.add(p.id) }
+        }
         state.cursor = action.payload.cursor
         state.hasMore = action.payload.hasMore
       })
@@ -266,6 +280,7 @@ const postSlice = createSlice({
       })
       .addCase(deletePost.fulfilled, (state, action) => {
         postsAdapter.removeOne(state, action.payload)
+        state.feedIds = state.feedIds.filter((id) => id !== action.payload)
       })
       .addCase(fetchPostById.fulfilled, (state, action) => {
         postsAdapter.upsertOne(state, action.payload)
@@ -307,6 +322,13 @@ export const {
   selectById: selectPostById,
   selectIds: selectPostIds,
 } = postsAdapter.getSelectors((state) => state.posts)
+
+// Feed order comes from the server (ranked) — entities stay a lookup table.
+// Memoized so unrelated dispatches don't rerender the whole feed.
+export const selectFeedPosts = createSelector(
+  [(state) => state.posts.feedIds, (state) => state.posts.entities],
+  (ids, entities) => ids.map((id) => entities[id]).filter(Boolean),
+)
 
 export const selectPostsLoading = (state) => state.posts.loading
 export const selectHasMore = (state) => state.posts.hasMore

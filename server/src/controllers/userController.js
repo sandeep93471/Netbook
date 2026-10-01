@@ -2,6 +2,8 @@ import User from '../models/User.js'
 import FriendRequest from '../models/FriendRequest.js'
 import Notification from '../models/Notification.js'
 import { emitToUser } from '../socket/index.js'
+import { cache } from '../utils/cache.js'
+import { bustAuthorCache } from './postController.js'
 
 const shapeUser = (u) => ({
   uid: u._id, displayName: u.displayName, searchName: u.searchName,
@@ -52,10 +54,22 @@ export const updateMe = async (req, res) => {
     else user.photoHistory.push(add)
   })
   await user.save()
+  cache.del(`usearch:`).catch(() => {}) // name/photo changed → search results stale
+  bustAuthorCache(user._id) // isPrivate/friends may have changed the feed gate
   res.json({ user: shapeUser(user) })
 }
 
-
+// PUT /api/users/me/e2ee-key { jwk } — publish my ECDH public key for E2EE DMs.
+// The private key never leaves the client's IndexedDB.
+export const setE2eeKey = async (req, res) => {
+  const jwk = req.body.jwk
+  if (!jwk || jwk.kty !== 'EC' || jwk.crv !== 'P-256') {
+    return res.status(400).json({ message: 'Expected an ECDH P-256 public JWK' })
+  }
+  req.user.e2eePublicKey = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, ext: true }
+  await req.user.save()
+  res.json({ ok: true })
+}
 
 // PUT /api/users/me/close-friends/:id — toggle friend in/out of Close Friends list
 export const toggleCloseFriend = async (req, res) => {
@@ -68,6 +82,7 @@ export const toggleCloseFriend = async (req, res) => {
     ? user.closeFriends.filter((f) => f.toString() !== fid)
     : [...user.closeFriends, fid]
   await user.save()
+  bustAuthorCache(user._id) // my close-friends list gates closefriends posts
   res.json({ closeFriends: user.closeFriends, added: !has })
 }
 
@@ -87,10 +102,12 @@ export const toggleSaved = async (req, res) => {
 export const searchUsers = async (req, res) => {
   const term = (req.query.q || '').toLowerCase().trim()
   if (!term) return res.json({ users: [] })
-  const users = await User.find({ searchName: new RegExp(`^${term}`, 'i') })
-    .select('displayName searchName photoURL bio')
-    .limit(20)
-    .lean()
+  const users = await cache.wrap(`usearch:${term}`, 30, () =>
+    User.find({ searchName: new RegExp(`^${term}`, 'i') })
+      .select('displayName searchName photoURL bio')
+      .limit(20)
+      .lean()
+  )
   res.json({ users: users.map((u) => ({ uid: u._id, ...u })) })
 }
 
@@ -98,10 +115,12 @@ export const searchUsers = async (req, res) => {
 export const suggestedUsers = async (req, res) => {
   const me = req.user
   // Exclude friends in the query — no need to fetch their ids and filter here
-  const users = await User.find({ _id: { $ne: me._id }, friends: { $ne: me._id } })
-    .select('displayName photoURL bio')
-    .limit(10)
-    .lean()
+  const users = await cache.wrap(`suggest:${me._id}`, 60, () =>
+    User.find({ _id: { $ne: me._id }, friends: { $ne: me._id } })
+      .select('displayName photoURL bio')
+      .limit(10)
+      .lean()
+  )
   res.json({
     users: users.map((u) => ({ uid: u._id, displayName: u.displayName, photoURL: u.photoURL, bio: u.bio })),
   })
@@ -111,8 +130,8 @@ export const suggestedUsers = async (req, res) => {
 export const basicUsers = async (req, res) => {
   const ids = (req.query.ids || '').split(',').filter(Boolean)
   const users = await User.find({ _id: { $in: ids } })
-    .select('displayName photoURL lastSeen').lean()
-  res.json({ users: users.map((u) => ({ uid: u._id, displayName: u.displayName, photoURL: u.photoURL, lastSeen: u.lastSeen })) })
+    .select('displayName photoURL lastSeen e2eePublicKey').lean()
+  res.json({ users: users.map((u) => ({ uid: u._id, displayName: u.displayName, photoURL: u.photoURL, lastSeen: u.lastSeen, e2eePublicKey: u.e2eePublicKey || null })) })
 }
 
 // POST /api/users/me/search-history { term }
@@ -143,6 +162,33 @@ export const addFcmToken = async (req, res) => {
     user.fcmTokens.push(req.body.token)
     await user.save()
   }
+  res.json({ ok: true })
+}
+
+// POST /api/users/me/push-subscription { subscription } — Web Push (VAPID),
+// one entry per device/browser, deduped by endpoint
+export const addPushSubscription = async (req, res) => {
+  const sub = req.body.subscription
+  if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
+    return res.status(400).json({ message: 'Invalid push subscription' })
+  }
+  await User.updateOne(
+    { _id: req.user._id },
+    { $pull: { pushSubscriptions: { endpoint: sub.endpoint } } },
+  )
+  await User.updateOne(
+    { _id: req.user._id },
+    { $push: { pushSubscriptions: { $each: [{ endpoint: sub.endpoint, keys: sub.keys, at: Date.now() }], $slice: -10 } } },
+  )
+  res.json({ ok: true })
+}
+
+// DELETE /api/users/me/push-subscription { endpoint } — unsubscribe this device
+export const removePushSubscription = async (req, res) => {
+  await User.updateOne(
+    { _id: req.user._id },
+    { $pull: { pushSubscriptions: { endpoint: req.body.endpoint } } },
+  )
   res.json({ ok: true })
 }
 

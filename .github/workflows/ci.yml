@@ -41,3 +41,6 @@ jobs:
       - run: npm ci
       # Syntax check — Node 22 parses ES modules natively (no runtime, no imports)
       - run: node --check server.js && node --check src/app.js
+      # Integration tests — mongodb-memory-server spins up a real in-memory
+      # Mongo; globalSetup env vars keep tests hermetic (no Atlas, no emails)
+      - run: npm test

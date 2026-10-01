@@ -21,6 +21,9 @@ const postSchema = new mongoose.Schema({
   // Audience selector — like FB's Public / Friends / Only me
   visibility: { type: String, enum: ['public', 'followers', 'closefriends', 'onlyme'], default: 'public' },
   videoURL: { type: String, default: '' }, // reels — max 5 min enforced client-side + upload preset
+  // 384-dim MiniLM embedding for semantic search — select:false keeps it out
+  // of every feed/profile payload (it's ~1.5KB of floats per post)
+  embedding: { type: [Number], select: false, default: undefined },
 }, { timestamps: true })
 
 // Feed sort + per-profile post lists hit these constantly

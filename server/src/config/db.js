@@ -1,6 +1,8 @@
 import mongoose from 'mongoose'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 
+let mem = null // kept so tests can stop the in-memory server cleanly
+
 // Atlas first; if the URI is missing/broken, spin up a real in-memory MongoDB
 // so the app is still usable for dev/demo. Data resets on server restart.
 export const connectDB = async () => {
@@ -18,7 +20,13 @@ export const connectDB = async () => {
     console.log('No MONGODB_URI set — using in-memory MongoDB')
   }
 
-  const mem = await MongoMemoryServer.create()
+  mem = await MongoMemoryServer.create()
   const conn = await mongoose.connect(mem.getUri('netbook'))
   console.log(`In-memory MongoDB running (data resets on restart): ${conn.connection.host}`)
+}
+
+// Test teardown — drop the connection and stop mongod
+export const disconnectDB = async () => {
+  await mongoose.disconnect()
+  if (mem) { await mem.stop(); mem = null }
 }

@@ -207,13 +207,19 @@ follows, groups (~1000+); (2) signals — who posted, type, your history with
 them, friend engagement; (3) predictions — P(you comment), P(share), dwell
 time; (4) score + diversify post types. Friends-tab is recency-only.
 
-### Netbook implementation — ✅ student-scale equivalent
-- **For You**: recency feed of all visible posts (privacy-filtered), cursor
-  pagination.
-- **Following**: filter to `following[]` only — matches FB's Friends feed.
-- Honest scope note: real ranking needs engagement signals + ML; our
-  recency+following split is the classic clone approach. Cheap upgrade path:
-  score = recency − decay + w₁·comments + w₂·unique reactors.
+### Netbook implementation — ✅ student-scale equivalent (real ranking)
+- **For You**: the candidate pool (latest 150 visible posts, cached 15s)
+  is scored per-viewer:
+  `score = 10·2^(-ageH/24)` (recency, ~24h half-life)
+  `+ 3·ln(1+comments) + 2·ln(1+reactors) + 4·ln(1+shares) + 0.5·media`
+  (log-scaled so viral posts can't pin the top)
+  `+ affinity` (close friend 6 > friend 4 > following 2.5 > own 0.5 > stranger 0)
+  then a diversification pass caps consecutive same-author posts.
+- **Pagination**: opaque cursor — `r:<offset>:<bucket>` walks the ranked pool
+  (bucket = 15s time slice, keeps the shared candidate query cacheable);
+  `t:<createdAt>` seamlessly continues into the chronological archive.
+- **Friends/Close Friends tabs**: client filters of the same ranked stream.
+- Metrics: `netbook_feed_rank_duration_seconds` histogram tracks scoring cost.
 
 ---
 
@@ -245,10 +251,13 @@ Grouped (10 likes = 1 notification). Push via FCM/web-push for offline users.
 - Server creates + `socket.emit('notification:new')` → live badge bump, no
   refresh needed.
 - Page: unread = blue left-border highlight; mark-one on click; mark-all button.
-- Types: like, comment, reply, share, follow, follow_request (with inline
-  Accept/Decline), follow_accept, friend_request, friend_accept, mention,
-  message.
-- `PUT /users/me/fcm` stores device tokens (send pipeline = future work).
+- Types: like, comment, reply, share, follow, friend_request, friend_accept,
+  mention (message push is sent directly, not stored as a doc).
+- **Web Push (VAPID) — COMPLETE**: `utils/notify.js` is the single pipeline —
+  Notification doc + socket emit (online) + `web-push` to subscribed devices
+  (offline). VAPID keys via env; dead subscriptions pruned on 404/410.
+  Client: `/sw.js` service worker + PushManager subscribe in `messaging.js`;
+  subscription detached on logout.
 
 ---
 
@@ -338,6 +347,14 @@ content gets reduced distribution; users can block.
 | Reports + auto-hide | ✓ | ✓ | Done |
 | Hashtags/mentions/tag feed | ✓* | ✓ | Done |
 | Saved posts | ✓ | ✓ | Done |
+| Ranked "For You" feed | ✓ | ✓ | Done — recency decay + engagement + affinity + diversity |
+| Redis-backed cache | ✓ | ✓ | Done — in-process fallback, cache-aside |
+| Web push (VAPID) | ✓ | ✓ | Done — replaces FCM stub |
+| E2EE DMs | ✓ | ✓ | Done — opt-in, ECDH+AES-GCM |
+| Semantic search | ◐ | ✓ | Done — MiniLM embeddings + cosine / Atlas $vectorSearch |
+| Prometheus metrics | n/a | ✓ | Done — /api/metrics |
+| Swagger/OpenAPI docs | n/a | ✓ | Done — /api/docs |
+| Server integration tests | n/a | ✓ | Done — vitest + supertest + in-memory Mongo |
 
 ### Intentionally out of scope (not student-implementable for free)
 | Feature | Why skipped |
@@ -350,6 +367,69 @@ content gets reduced distribution; users can block.
 | 2FA / multi-device sessions | feasible but low demo value vs effort |
 | Message requests folder | our private-follow gate covers the same intent |
 | Vanish mode, Notes, Broadcast channels | IG extras — could add Notes easily if wanted |
+
+---
+
+## 16. SYSTEMS & PLATFORM (the engineering layer)
+
+These are the parts most clones never build — each is standard production
+practice implemented at student scale.
+
+### Caching (`utils/cache.js`)
+Cache-aside read-through on the hot paths: feed candidate pool (15s),
+explore pool (30s), per-author privacy records (15s, busted on
+friend/privacy writes), user search (30s), tag feeds (20s), suggestions (60s).
+`REDIS_URL` set → node-redis with auto-reconnect; unset/down → bounded
+in-process TTL map (500 entries, LRU-ish evict). `cache.backend()` reports
+which is live; hit/miss counters feed `/api/metrics`.
+
+### Feed ranking (`utils/rankFeed.js`)
+See §10. Pure scoring function — testable, tunable weights at the top of file.
+
+### Observability
+- **pino + pino-http**: one JSON line per request; `genReqId` UUIDs let you
+  grep a single request end-to-end; pino-pretty in dev (optional devDep).
+- **@prometheus-io/client**: default process metrics + http counters/histograms
+  labelled by route, cache hit/miss counters, connected-socket gauge.
+- **`/api/health`**: db readyState, uptime, cache backend, RSS memory.
+- **`/api/metrics`**: Prometheus exposition; `METRICS_TOKEN` env gates it.
+
+### E2EE direct messages (`client/src/api/e2ee.js`)
+- Per-user ECDH P-256 keypair generated by WebCrypto; private key lives only
+  in IndexedDB (`netbook-e2ee`), public JWK published via `PUT /users/me/e2ee-key`.
+- Enabling: `PUT /chat/conversations/:id/e2ee` — DM-only, both sides must have
+  published keys (409 otherwise), one-way switch.
+- Wire format: `Message.enc = {v:1, iv, ct}` (AES-256-GCM, random 96-bit IV);
+  `text` stays empty; sidebar preview shows "🔒 Encrypted message"; push
+  notifications carry no message content.
+- Honest tradeoffs: no multi-device key sync, no key backup — losing the
+  device's IndexedDB loses history (same tradeoff Signal makes without a PIN).
+
+### Semantic search (`utils/embeddings.js`)
+- all-MiniLM-L6-v2 (384-dim, quantized) via `@huggingface/transformers` —
+  runs in-process, free, no API key. Lazy-loaded on first use.
+- `Post.embedding` is `select:false` — never inflates feed payloads.
+- Query path: `GET /api/posts/semantic?q=` → embed query →
+  Atlas `$vectorSearch` when `ATLAS_VECTOR_INDEX` is set, else cosine over
+  the recent embedded pool in-process (correct at ≤~10k posts) →
+  privacy filter → results. Model unavailable → keyword search fallback.
+- Backfill existing posts: `node -e "import('...')"` or just let new posts
+  embed on write; old posts embed lazily.
+
+### Testing
+- **Server**: vitest + supertest + mongodb-memory-server (one shared in-memory
+  Mongo via `tests/globalSetup.js`; env hermetic — no Atlas, no SMTP, no model
+  downloads). Covers auth flow, privacy gating, onlyme audience, reactions,
+  auto-hide reports, DM friends-only rule, E2EE ciphertext storage, ops
+  endpoints. `npm test`.
+- **Client**: vitest + jsdom + testing-library (Login, PostCard, slices,
+  validation) with IntersectionObserver polyfill.
+
+### Load testing (`scripts/loadtest.js`)
+autocannon suite — logs in a throwaway user then benchmarks `/api/health`,
+`/api/posts` (ranked), `/api/posts/explore`. Set `RATE_LIMIT_MAX=off` on the
+server or the global limiter 429s the benchmark (that *is* the limiter
+working). `CONN=100 DUR=30 npm run loadtest` to push harder.
 
 ---
 *FB supports hashtags/mentions too — just less central than IG/Twitter.

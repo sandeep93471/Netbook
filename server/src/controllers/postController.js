@@ -3,20 +3,30 @@ import Comment from '../models/Comment.js'
 import User from '../models/User.js'
 import Notification from '../models/Notification.js'
 import Report from '../models/Report.js'
-import { emitToUser } from '../socket/index.js'
+import { notify } from '../utils/notify.js'
+import { cache } from '../utils/cache.js'
+import { rankPosts, FEED_POOL_SIZE } from '../utils/rankFeed.js'
+import { feedRankDuration } from '../utils/metrics.js'
+import { embedText, cosine } from '../utils/embeddings.js'
 
 const VALID_REACTIONS = ['like', 'love', 'haha', 'wow', 'sad', 'angry']
 const PAGE_SIZE = 10
 
-// Create a notification + push it over socket if the recipient is online
-const notify = async ({ recipientId, sender, type, postId, postText }) => {
-  if (recipientId.toString() === sender._id.toString()) return
-  const n = await Notification.create({
-    recipient: recipientId, sender: sender._id,
-    senderName: sender.displayName, senderPhoto: sender.photoURL,
-    type, postId, postText: postText?.slice(0, 80),
-  })
-  emitToUser(recipientId, 'notification:new', n)
+// Any post write can change what's in the cached pools — drop them.
+// Prefix delete; short TTLs cover everything else.
+const invalidatePostCaches = (post) =>
+  Promise.all([
+    cache.del('feed:pool'),
+    cache.del('explore:pool'),
+    ...(post?.hashtags || []).map((t) => cache.del(`tag:${t}`)),
+  ]).catch(() => {})
+
+// Fire-and-forget: embed post text for semantic search. Never blocks writes.
+const embedPost = (post) => {
+  if (!post.text) return
+  embedText(post.text)
+    .then((vec) => vec && Post.updateOne({ _id: post._id }, { embedding: vec }))
+    .catch(() => {})
 }
 
 // Parse #tags, @mentions (resolves names to uids), searchTerms from text
@@ -36,13 +46,20 @@ const parsePostText = async (text) => {
 // flattenMaps — Mongoose Maps serialize as {} without it (reactions, mentionMap)
 const shapePost = (p) => ({ ...p.toObject({ flattenMaps: true }), id: p._id, userId: p.user?.toString() })
 
-// Privacy filter — private accounts AND per-post audience (public/followers/onlyme)
+// Privacy filter — private accounts AND per-post audience (public/followers/onlyme).
+// Author privacy state is hot-read on every feed request → cache-aside per
+// author (15s). Invalidated on any relationship/privacy write; TTL bounds
+// worst-case staleness either way.
+const authorPrivacy = (id) => cache.wrap(`author:${id}`, 15, () =>
+  User.findById(id).select('isPrivate followers friends closeFriends').lean()
+)
+export const bustAuthorCache = (id) => cache.del(`author:${id}`)
+
 const filterVisiblePosts = async (posts, viewer) => {
   const vid = viewer._id.toString()
   const authorIds = [...new Set(posts.map((p) => p.user?.toString()).filter(Boolean))]
-  const authors = await User.find({ _id: { $in: authorIds } })
-    .select('isPrivate followers friends closeFriends').lean()
-  const authorMap = Object.fromEntries(authors.map((a) => [a._id.toString(), a]))
+  const authors = await Promise.all(authorIds.map(authorPrivacy))
+  const authorMap = Object.fromEntries(authors.filter(Boolean).map((a) => [a._id.toString(), a]))
 
   const allowed = (p) => {
     const aid = p.user?.toString()
@@ -60,22 +77,65 @@ const filterVisiblePosts = async (posts, viewer) => {
   return posts.filter(allowed)
 }
 
-// GET /api/posts?cursor=<createdAt> — feed, newest first, paginated
-export const getFeed = async (req, res) => {
-  const cursor = req.query.cursor ? Number(req.query.cursor) : null
-  const filter = { hidden: { $ne: true } }
-  if (cursor) filter.createdAt = { $lt: new Date(cursor) }
-  let posts = await Post.find(filter)
-    .sort({ createdAt: -1 })
-    .limit(PAGE_SIZE + 1)
-    .lean()
-  posts = await filterVisiblePosts(posts, req.user)
+// GET /api/posts — two modes:
+//   ranked (default): cursor is opaque "r:<offset>:<bucket>" — we score the
+//     latest FEED_POOL_SIZE posts against the viewer and paginate the pool.
+//     Bucket anchors the pool to a 15s window so pages are stable and the
+//     shared candidate query stays cacheable.
+//   tail: when the pool is exhausted we hand back "t:<createdAt>" and paging
+//     continues chronologically forever. Plain numeric cursors (old clients)
+//     are treated as timestamps too — backward compatible.
+const BUCKET_MS = 15_000
+
+const rankedPage = async (cursor, viewer) => {
+  const [, offRaw, bucketRaw] = cursor?.split(':') || []
+  const offset = Number(offRaw) || 0
+  const bucket = Number(bucketRaw) || Math.floor(Date.now() / BUCKET_MS)
+
+  const end = feedRankDuration.startTimer()
+  const pool = await cache.wrap(`feed:pool:${bucket}`, 15, () =>
+    Post.find({ hidden: { $ne: true } }).sort({ createdAt: -1 }).limit(FEED_POOL_SIZE).lean()
+  )
+  const visible = await filterVisiblePosts(pool, viewer)
+  const ranked = rankPosts(visible, viewer)
+  end()
+
+  const page = ranked.slice(offset, offset + PAGE_SIZE)
+  if (offset + PAGE_SIZE < ranked.length) {
+    return { posts: page, hasMore: true, cursor: `r:${offset + PAGE_SIZE}:${bucket}` }
+  }
+  // Pool exhausted — continue chronologically from the oldest candidate
+  const oldest = pool[pool.length - 1]?.createdAt
+  const moreOld = pool.length === FEED_POOL_SIZE
+  return {
+    posts: page,
+    hasMore: moreOld,
+    cursor: moreOld ? `t:${new Date(oldest).getTime()}` : null,
+  }
+}
+
+const tailPage = async (createdAtMs, viewer) => {
+  const posts = await Post.find({ hidden: { $ne: true }, createdAt: { $lt: new Date(createdAtMs) } })
+    .sort({ createdAt: -1 }).limit(PAGE_SIZE + 1).lean()
+  const visible = (await filterVisiblePosts(posts, viewer)).slice(0, PAGE_SIZE)
   const hasMore = posts.length > PAGE_SIZE
-  const page = posts.slice(0, PAGE_SIZE)
-  res.json({
-    posts: page.map((p) => ({ ...p, id: p._id, userId: p.user?.toString() })),
+  return {
+    posts: visible,
     hasMore,
-    cursor: hasMore ? new Date(page[page.length - 1].createdAt).getTime() : null,
+    cursor: hasMore ? `t:${new Date(visible[visible.length - 1].createdAt).getTime()}` : null,
+  }
+}
+
+export const getFeed = async (req, res) => {
+  const cursor = req.query.cursor || null
+  const ranked = !cursor || cursor.startsWith('r:')
+  const result = ranked
+    ? await rankedPage(cursor, req.user)
+    : await tailPage(Number(cursor.replace('t:', '')), req.user)
+  res.json({
+    posts: result.posts.map((p) => ({ ...p, id: p._id, userId: p.user?.toString() })),
+    hasMore: result.hasMore,
+    cursor: result.cursor,
   })
 }
 
@@ -89,10 +149,13 @@ export const getReels = async (req, res) => {
 
 // GET /api/posts/explore — media posts ranked by engagement (likes+comments+shares)
 export const getExplore = async (req, res) => {
-  let posts = await Post.find({
-    hidden: { $ne: true },
-    $or: [{ imageURL: { $ne: '' } }, { videoURL: { $ne: '' } }],
-  }).sort({ createdAt: -1 }).limit(100).lean()
+  // Raw pool is viewer-independent → shareable cache; privacy filter still runs per-request
+  let posts = await cache.wrap('explore:pool', 30, () =>
+    Post.find({
+      hidden: { $ne: true },
+      $or: [{ imageURL: { $ne: '' } }, { videoURL: { $ne: '' } }],
+    }).sort({ createdAt: -1 }).limit(100).lean()
+  )
   posts = await filterVisiblePosts(posts, req.user)
   posts.sort((a, b) =>
     (b.likes.length + b.commentCount + b.shareCount) - (a.likes.length + a.commentCount + a.shareCount))
@@ -114,6 +177,8 @@ export const createPost = async (req, res) => {
   await Promise.all(parsed.mentions.map((uid) =>
     notify({ recipientId: uid, sender: req.user, type: 'mention', postId: post._id, postText: text })
   ))
+  embedPost(post)
+  invalidatePostCaches(post)
   res.status(201).json({ post: shapePost(post) })
 }
 
@@ -144,6 +209,8 @@ export const updatePost = async (req, res) => {
     post.visibility = req.body.visibility
   }
   await post.save()
+  embedPost(post) // text may have changed — re-embed
+  invalidatePostCaches(post)
   res.json({ post: shapePost(post) })
 }
 
@@ -159,6 +226,7 @@ export const deletePost = async (req, res) => {
     Comment.deleteMany({ post: post._id }),
     Notification.deleteMany({ postId: post._id }),
     Report.deleteMany({ post: post._id }),
+    invalidatePostCaches(post),
   ])
   res.json({ deleted: true })
 }
@@ -230,8 +298,10 @@ export const reportPost = async (req, res) => {
 
 // GET /api/posts/tag/:tag
 export const postsByTag = async (req, res) => {
-  const posts = await Post.find({ hashtags: req.params.tag.toLowerCase(), hidden: { $ne: true } })
-    .sort({ createdAt: -1 }).limit(50).lean()
+  const tag = req.params.tag.toLowerCase()
+  const posts = await cache.wrap(`tag:${tag}`, 20, () =>
+    Post.find({ hashtags: tag, hidden: { $ne: true } }).sort({ createdAt: -1 }).limit(50).lean()
+  )
   res.json({ posts: posts.map((p) => ({ ...p, id: p._id, userId: p.user?.toString() })) })
 }
 
@@ -242,6 +312,55 @@ export const searchPosts = async (req, res) => {
     hidden: { $ne: true },
   }).sort({ createdAt: -1 }).limit(50).lean()
   res.json({ posts: posts.map((p) => ({ ...p, id: p._id, userId: p.user?.toString() })) })
+}
+
+// GET /api/posts/semantic?q=phrase — meaning-level search over post
+// embeddings. Atlas $vectorSearch when ATLAS_VECTOR_INDEX is configured,
+// otherwise cosine similarity over the recent pool in-process — same
+// results, just done by hand. Embeddings unavailable → keyword fallback
+// so the UI never dead-ends.
+export const searchPostsSemantic = async (req, res) => {
+  const q = (req.query.q || '').trim()
+  if (!q) return res.json({ posts: [], semantic: true })
+  const qvec = await embedText(q)
+  if (!qvec) return searchPosts(req, res) // model off/failed → keyword results
+
+  let candidates = null
+  if (process.env.ATLAS_VECTOR_INDEX) {
+    try {
+      candidates = await Post.aggregate([
+        {
+          $vectorSearch: {
+            index: process.env.ATLAS_VECTOR_INDEX,
+            path: 'embedding',
+            queryVector: qvec,
+            numCandidates: 200,
+            limit: 50,
+          },
+        },
+        { $addFields: { _score: { $meta: 'vectorSearchScore' } } },
+        { $match: { hidden: { $ne: true } } },
+      ])
+    } catch {
+      candidates = null // index missing or not on Atlas → in-app path below
+    }
+  }
+  if (!candidates) {
+    const pool = await Post.find({ hidden: { $ne: true }, embedding: { $exists: true, $ne: [] } })
+      .select('+embedding').sort({ createdAt: -1 }).limit(500).lean()
+    candidates = pool
+      .map((p) => ({ ...p, _score: cosine(qvec, p.embedding) }))
+      .filter((p) => p._score >= 0.25) // below this it's noise, not a match
+      .sort((a, b) => b._score - a._score)
+      .slice(0, 40)
+  }
+  const visible = await filterVisiblePosts(candidates, req.user)
+  res.json({
+    semantic: true,
+    posts: visible.slice(0, 30).map(({ embedding, _score, ...p }) => ({
+      ...p, id: p._id, userId: p.user?.toString(),
+    })),
+  })
 }
 
 // GET /api/posts/user/:userId — private accounts only show to followers/friends

@@ -13,6 +13,13 @@ const userSchema = new mongoose.Schema({
   isPrivate: { type: Boolean, default: false }, // private account → follow needs approval
   closeFriends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // IG Close Friends list
   fcmTokens: [{ type: String }],
+  // Web Push subscriptions (VAPID) — one per device/browser
+  pushSubscriptions: [{
+    endpoint: String,
+    keys: { p256dh: String, auth: String },
+    at: { type: Number, default: Date.now },
+  }],
+  e2eePublicKey: { type: Object, default: null }, // ECDH P-256 JWK for encrypted DMs
   friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

@@ -13,6 +13,12 @@ and privacy-aware profiles — inspired by Facebook, Instagram and Messenger.
 | Client | React 19, Vite, Redux Toolkit + Persist, MUI, Tailwind v4, Framer Motion |
 | Server | Express 5, Mongoose, Socket.io, express-validator, helmet, rate-limit |
 | Auth | JWT access (15 min) + refresh (30 d) in httpOnly cookies, bcrypt, Google OAuth |
+| Cache | Redis (`REDIS_URL`) with automatic in-process TTL fallback — never hard-down |
+| Observability | pino structured logs w/ request IDs, Prometheus metrics at `/api/metrics` |
+| Push | Web Push (VAPID) + service worker — works offline, no Firebase needed |
+| AI | Local MiniLM embeddings (`@huggingface/transformers`) → semantic post search; Atlas `$vectorSearch` when `ATLAS_VECTOR_INDEX` is set |
+| E2EE | WebCrypto ECDH P-256 + AES-256-GCM — opt-in encrypted DMs |
+| Docs | OpenAPI 3 spec + Swagger UI at `/api/docs` |
 | Media | Cloudinary unsigned uploads (images, video, avatars, covers, stories) |
 | Email | Nodemailer + Gmail SMTP (verification & password-reset codes) |
 
@@ -20,8 +26,11 @@ and privacy-aware profiles — inspired by Facebook, Instagram and Messenger.
 
 - **Auth** — register/login/logout, silent refresh rotation, 6-digit email
   verification & password reset codes, Google sign-in
-- **Feed** — For You / Friends / Close Friends tabs, cursor pagination,
-  infinite scroll, scroll restoration, "all caught up" marker
+- **Feed** — **ranked "For You"** (recency decay + log-scaled engagement +
+  author affinity, with same-author diversification), Friends / Close Friends
+  tabs, opaque cursor pagination, infinite scroll, scroll restoration,
+  "all caught up" marker. Exhausting the ranked pool seamlessly continues
+  into the chronological archive.
 - **Posts** — text, photo, video, gradient backgrounds, hashtags, @mentions,
   audience selector (public / friends / close friends / only me), edit, delete
 - **Reactions** — like/love/haha/wow/sad/angry with per-emoji counts and
@@ -47,7 +56,12 @@ and privacy-aware profiles — inspired by Facebook, Instagram and Messenger.
 - **Group admin** — multiple admins, promote/demote, remove members,
   permissions (who can send messages / who can add members)
 - **Presence** — online/offline dots + last-seen via socket connect/disconnect
-- **Notifications** — REST history + realtime push, unread tint + badge
+- **Notifications** — REST history + realtime socket + **Web Push (VAPID)**
+  for offline users, unread tint + badge
+- **E2EE DMs** — opt-in per conversation; ECDH P-256 key agreement →
+  AES-256-GCM ciphertext; server stores `enc:{iv,ct}` only
+- **Semantic search** — "AI" toggle on post search: MiniLM embeddings +
+  cosine similarity (Atlas Vector Search path available)
 - **Reports** — auto-hide post at 3 reports
 - **UI** — dark/light mode (flash-free init), Inter, brand gradient,
   focus rings, reduced-motion, fully responsive with mobile bottom nav
@@ -107,15 +121,20 @@ same-origin in dev, no CORS setup needed.
 
 ```powershell
 # client
-npm run dev     # dev server
-npm run build   # production build
-npm run lint    # eslint
-npx vitest run  # unit tests (jsdom)
+npm run dev        # dev server
+npm run build      # production build
+npm run lint       # eslint
+npm test           # unit tests (vitest + jsdom)
 
 # server
-npm run dev     # nodemon
-npm start       # production
+npm run dev        # node --watch
+npm start          # production
+npm test           # integration tests (supertest + in-memory MongoDB)
+npm run loadtest   # autocannon suite — needs `npm run dev` running
 ```
+
+Server tests run against a real (in-memory) MongoDB — auth flows, privacy
+gating, reactions, chat + E2EE storage rules, health/metrics/docs endpoints.
 
 ## API quick map
 
@@ -153,11 +172,54 @@ POST /api/stories/:id/view
 GET  /api/highlights/user/:userId    POST /api/highlights    DELETE /api/highlights/:id
 ```
 
+## API docs & ops
+
+- **`/api/docs`** — Swagger UI over the full OpenAPI 3 spec (`/api/openapi.json`)
+- **`/api/health`** — db state, uptime, cache backend, memory
+- **`/api/metrics`** — Prometheus exposition (request counts/duration by route,
+  cache hit rate, live socket gauge); set `METRICS_TOKEN` to gate it
+- **Logs** — structured JSON (pino) with per-request UUIDs, pretty-printed in dev
+
+## Performance
+
+Cache-aside on hot reads (feed candidate pool, explore, author privacy
+records, user search, tag feeds) — Redis when `REDIS_URL` is set, bounded
+in-process TTL cache otherwise.
+
+Measured locally (`npm run loadtest`, 40 connections × 15s, in-memory MongoDB):
+
+| Endpoint | Throughput | p50 | p99 |
+|---|---|---|---|
+| `GET /api/posts` (ranked feed) | ~320 req/s | 122 ms | 237 ms |
+| `GET /api/posts/explore` | ~346 req/s | 113 ms | 184 ms |
+| `GET /api/health` | ~1330 req/s | 26 ms | 140 ms |
+
+Feed p50 dropped ~3.6× (937 ms → 258 ms against remote Atlas M0) after adding
+the candidate-pool + author caches.
+
+## Design decisions worth knowing
+
+- **Why JWT-in-cookies (not localStorage)** — httpOnly cookies are XSS-safe;
+  refresh token is scoped to `/api/auth` so it can't ride arbitrary requests.
+- **Why opaque feed cursors** — `r:<offset>:<bucket>` paginates a stable,
+  bucketed candidate pool; `t:<createdAt>` continues into the archive.
+  No duplicates, no "post jumping" when new content lands mid-scroll.
+- **Why the privacy filter runs post-fetch** — audience rules need the
+  *viewer's* relationship to each author, which a pure query can't express.
+  Author records are cached per-id and busted on friend/privacy writes.
+- **Why E2EE is opt-in per DM** — keys live in the device's IndexedDB; groups
+  and cross-device history need a heavier key-distribution design (documented
+  tradeoff, Signal-style).
+- **Why semantic search falls back** — embeddings are a progressive
+  enhancement; if the model can't load, keyword search answers instead. The
+  API stays up regardless.
+
 ## Security
 
-helmet · rate limiting · express-validator · bcrypt · httpOnly cookies ·
-refresh cookie scoped to `/api/auth` · server-side privacy enforcement on
-every content query
+helmet · rate limiting (`RATE_LIMIT_MAX` to tune) · express-validator ·
+bcrypt · httpOnly cookies · refresh cookie scoped to `/api/auth` ·
+server-side privacy enforcement on every content query · E2EE ciphertext
+never readable server-side
 
 ## Docs
 

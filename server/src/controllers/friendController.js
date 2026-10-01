@@ -1,7 +1,8 @@
 import FriendRequest from '../models/FriendRequest.js'
 import User from '../models/User.js'
-import Notification from '../models/Notification.js'
 import { emitToUser } from '../socket/index.js'
+import { notify } from '../utils/notify.js'
+import { bustAuthorCache } from './postController.js'
 
 // GET /api/friends — my requests (received + sent) and friends list
 export const getFriends = async (req, res) => {
@@ -42,11 +43,7 @@ export const sendRequest = async (req, res) => {
   if (existing) return res.status(409).json({ message: 'Request already pending' })
 
   const request = await FriendRequest.create({ from: req.user._id, to })
-  await Notification.create({
-    recipient: to, sender: req.user._id,
-    senderName: req.user.displayName, senderPhoto: req.user.photoURL,
-    type: 'friend_request',
-  }).then((n) => emitToUser(to, 'notification:new', n))
+  await notify({ recipientId: to, sender: req.user, type: 'friend_request' })
   res.status(201).json({ requestId: request._id })
 }
 
@@ -74,17 +71,16 @@ export const acceptRequest = async (req, res) => {
     User.findByIdAndUpdate(request.from, { $addToSet: { friends: request.to } }),
     User.findByIdAndUpdate(request.to, { $addToSet: { friends: request.from } }),
     FriendRequest.findByIdAndDelete(request._id),
-    Notification.create({
-      recipient: request.from, sender: req.user._id,
-      senderName: req.user.displayName, senderPhoto: req.user.photoURL,
-      type: 'friend_accept',
-    }).then((n) => emitToUser(request.from.toString(), 'notification:new', n)),
+    notify({ recipientId: request.from, sender: req.user, type: 'friend_accept' }),
   ])
   // Tell BOTH sides' clients to refresh — sender learns they're now friends,
   // accepter's other tabs/devices sync too
   const friendPair = { a: request.from.toString(), b: request.to.toString() }
   emitToUser(friendPair.a, 'friend:accepted', { by: friendPair.b })
   emitToUser(friendPair.b, 'friend:accepted', { by: friendPair.a })
+  // New friendship changes privacy gating for both sides' posts
+  bustAuthorCache(friendPair.a)
+  bustAuthorCache(friendPair.b)
   res.json({ friendId: request.from })
 }
 
@@ -95,6 +91,8 @@ export const unfriend = async (req, res) => {
   await Promise.all([
     User.findByIdAndUpdate(uid, { $pull: { friends: tid } }),
     User.findByIdAndUpdate(tid, { $pull: { friends: uid } }),
+    bustAuthorCache(uid),
+    bustAuthorCache(tid),
   ])
   res.json({ removed: true })
 }
